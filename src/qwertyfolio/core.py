@@ -7,8 +7,8 @@ from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
 from collections import defaultdict
 
-from .transaction import Transaction
-from .transactionleg import TransactionLeg
+from .transaction import Transaction, TransactionLeg, TransactionLog
+# from .transactionleg import TransactionLeg
 from .holding import Holding
 from .util import (
     option_underyling, 
@@ -42,40 +42,22 @@ class PortfolioManager:
         self.cash_balance: float = 0.0
         self.transactions: List[Transaction] = []
         self.transactions_dict = defaultdict(list) # key by chain id
+        self.transactions_log = TransactionLog(self.transaction_log_file)
         self._load_portfolio()
-       # Ensure transaction log file exists and has headers
-        if not os.path.exists(self.transaction_log_file): 
-            self._write_transaction_log_header() 
 
     def _load_portfolio(self):
         """Loads portfolio data from the JSON file."""
+        self.transactions = []
+        self.transactions_dict = defaultdict(list)
         if os.path.exists(self.portfolio_file):
             with open(self.portfolio_file, "r") as f:
                 data = json.load(f)
                 self.cash_balance = data.get("cash_balance", 0.0)
-                # check that key exists. 
-                if "transactions" in data :
-                    self.transactions = [self._load_transaction(t) for t in data.get("transactions", [])]
-                else:
-                    self.transactions = []
                 self.holdings = [self._load_holding(h) for h in data.get("holdings", [])]
-            #  reload transactions into the dict for easy recall
-            self.transactions_dict = defaultdict(list)
-            for trans in self.transactions:
-                self.transactions_dict[trans.chainid].append(trans)
         else:
             # default values for a new run
             self.cash_balance = 0.0
             self.holdings = []
-            self.transactions = []
-            self.transactions_dict = defaultdict(list)
-
-    def _get_chainid_from_symbol(self,symbol) -> tuple[int,int]:
-        """ gets the chain id and roll count based on prior activity """
-        for holding in self.holdings:
-            if holding.symbol == symbol:
-                return holding.chainid, holding.roll_count
-        return 0, 0  
 
     def _load_holding(self,holding_data) -> Holding:
         """ load holding helper"""
@@ -96,23 +78,6 @@ class PortfolioManager:
                     roll_count=holding_data["roll_count"],
                 )
 
-    def _load_transactions_from_log(self) -> List[Transaction]:
-        """Loads transactions from the transaction log file."""
-        transactions: List[Transaction] = []
-        try:
-            df = pd.read_csv(self.transaction_log_file)
-            for index, row in df.iterrows():
-                transaction = self._load_transaction_from_row(row)
-                transactions.append(transaction)
-        except FileNotFoundError:
-            warn(f"Transaction log file not found: {self.transaction_log_file}")
-        return transactions
-
-    def _load_transaction_from_row(self, row: pd.Series) -> Transaction:
-        legs = [TransactionLeg(symbol=row["leg_symbol"], quantity=int(row["leg_quantity"]), price=float(row["leg_price"]),
-                               action=row["leg_action"], asset_type=row["leg_asset_type"], instrument_type=row["leg_instrument_type"])]
-        return Transaction(timestamp=pd.to_datetime(row["timestamp"]).to_pydatetime(), legs=legs, chainid=int(row["chainid"]), roll_count=int(row["roll_count"]))
-
 
     def _load_transaction(self, transaction_data) -> Transaction:
         """ load transaction helper """
@@ -132,15 +97,7 @@ class PortfolioManager:
             roll_count=transaction_data.get("roll_count",0)
             )
 
-    def _write_transaction_log_header(self):
-        df = pd.DataFrame(columns=["timestamp", "chainid", "roll_count", "leg_symbol", "leg_quantity", "leg_price", "leg_action", "leg_asset_type", "leg_instrument_type"])
-        df.to_csv(self.transaction_log_file, index=False)
 
-    def _append_transaction_to_log(self, transaction: Transaction):
-        """Appends a transaction to the CSV log file."""
-        data = [[transaction.timestamp.isoformat(), transaction.chainid, transaction.roll_count, leg.symbol, leg.quantity, leg.price, leg.action, leg.asset_type, leg.instrument_type] for leg in transaction.legs]
-        df = pd.DataFrame(data, columns=["timestamp", "chainid", "roll_count", "leg_symbol", "leg_quantity", "leg_price", "leg_action", "leg_asset_type", "leg_instrument_type"])
-        df.to_csv(self.transaction_log_file, mode='a', header=not os.path.exists(self.transaction_log_file), index=False)
 
 
     def _save_portfolio(self):
@@ -159,11 +116,11 @@ class PortfolioManager:
                 indent=4,
             )
 
-    def _record_transaction(self, transaction: Transaction):
+    def _record_transaction(self, transaction: Transaction): # TODO cut
         """
         Records a transaction with timestamp and details.
         """
-        self._append_transaction_to_log(transaction)
+        self.transactions_log.record_transaction(transaction)
         self.transactions_dict[transaction.chainid].append(transaction)
         self._save_portfolio()
 
@@ -253,6 +210,14 @@ class PortfolioManager:
         return True
 
 
+    def _get_chainid_from_symbol(self,symbol) -> tuple[int,int]:
+        """ gets the chain id and roll count based on prior activity """
+        for holding in self.holdings:
+            if holding.symbol == symbol:
+                return holding.chainid, holding.roll_count
+        return 0, 0  
+
+
     def calculate_pnl(self, current_prices):
         """Calculates the Profit and Loss (PnL) of the portfolio."""
         pnl = 0.0
@@ -286,12 +251,9 @@ class PortfolioManager:
             print(f"  {holding.symbol}: {sign}{holding.quantity}, avg cost ${holding.average_open_price:.2f}, type: {holding.instrument_type}, asset:{holding.asset_type}, chain:{holding.chainid} rolls:{holding.roll_count}")
 
     def print_transactions(self):
-        """Prints the transaction history."""
-        print("Transaction History:")
-        for transaction in self._load_transactions_from_log():
-            print(f"  Timestamp: {transaction.timestamp.isoformat()}, ChainID:{transaction.chainid}, Roll:{transaction.roll_count}")
-            for leg in transaction.legs:
-                print(f"    {leg.action}: {leg.symbol}, qty: {leg.quantity}, price: {leg.price:.2f}, type: {leg.instrument_type}, asset:{leg.asset_type}")
+        self.transactions_log.print_transactions()
+
+
     def print_order_chains(self):
         """ prints order chains. """
         chainids = set()
