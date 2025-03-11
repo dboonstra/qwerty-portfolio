@@ -6,60 +6,45 @@ from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
 from collections import defaultdict
-
+from .holding import Asset
 from .util import warn, option_type, option_underyling
 
 
 
-
 @dataclass
-class TransactionLeg:
+class TransactionLeg(Asset):
     """
-    Represents a single leg of a transaction.
+    Represents a single asset in a transaction (stock or option).
     """
-    symbol: str
-    quantity: int
-    price: float
-    action: str  # bto, sto, btc, stc, deposit
-    asset_type: str = field(default="S")  # S, C, or P
-    instrument_type: str = field(default="Equity") # # Equity or Option
-
-    def __post_init__(self):
-        """
-        Initializes derived attributes based on the symbol.
-        """
-        if not self.action in ["bto", "sto", "btc", "stc", "deposit","withdraw"]:
-            raise ValueError(f"Invalid action: {self.action}")  
-        if self.action.endswith('c'):
-            # ensure there is matching holding for close
-            pass
-
-        # ensure matching quantity
-        if self.action.startswith('s') and self.quantity > 0:
-            self.quantity = -self.quantity
-        elif self.action.startswith('b') and self.quantity < 0:
-            self.quantity = -self.quantity
-
-        
-        isoption = len(self.symbol) > 12
-        if isoption:
-            self.asset_type = option_type(self.symbol)
-            self.instrument_type = 'Equity Option'
-            self.underlying_symbol = option_underyling(self.symbol)
-        else:
-            self.asset_type = 'S'
-            self.instrument_type = 'Equity'
-            self.underlying_symbol = self.symbol
 
 @dataclass
 class Transaction:
     """
     Represents a transaction with one or more legs.
+    legs may be introduced as array of legs or DF of legs
+
     """
     timestamp: datetime.datetime = field(default_factory=datetime.datetime.now)
     legs: List[TransactionLeg] = field(default_factory=list)
     chainid : int = 0
     roll_count: int = 0
+    df: Optional[pd.DataFrame] = None
+
+    def __post_init__(self):
+        if len(self.legs) == 0:
+            if self.df is None:
+                raise ValueError("Transaction must have at least one leg.")
+        else:
+            df = pd.DataFrame()
+            for leg in self.legs:
+                df = pd.concat([df, leg.df])
+            self.df = df
+        if self.chainid > 0:
+            self.df['chainid'] = self.chainid
+        if self.roll_count > 0:
+            self.df['roll_count'] = self.roll_count       
+        # TODO update cost calculations for margin impact
+        self.df['cost'] = self.df['quantity'] * self.df['price']
 
     def serialize(self) -> dict:
         """Serializes a Transaction object to a dictionary."""
@@ -70,8 +55,27 @@ class Transaction:
         return t
 
 @dataclass
-class TransactionLog:
+class TransactionLogger:
     transaction_log_file: str 
+
+
+    LOG_COLUMNS = [
+        "timestamp", 
+        "chainid", 
+        "roll_count", 
+        "symbol", 
+        "quantity", 
+        "price", 
+        "cost",
+        "action", 
+        "asset_type",
+        "underlying_symbol",
+        "days_to_expiration",
+        "delta",
+        "gamma",
+        "theta",
+        "quote_date",
+        ]
 
     def __post_init__(self):
         """Initializes the transaction log."""
@@ -81,9 +85,8 @@ class TransactionLog:
             self._write_transaction_log_header() 
 
 
-
     def _write_transaction_log_header(self):
-        df = pd.DataFrame(columns=["timestamp", "chainid", "roll_count", "leg_symbol", "leg_quantity", "leg_price", "leg_action", "leg_asset_type", "leg_instrument_type"])
+        df = pd.DataFrame(columns=TransactionLogger.LOG_COLUMNS)
         df.to_csv(self.transaction_log_file, index=False)
 
 
@@ -100,17 +103,32 @@ class TransactionLog:
         return transactions
 
     def _load_transaction_from_row(self, row: pd.Series) -> Transaction:
-        legs = [TransactionLeg(symbol=row["leg_symbol"], quantity=int(row["leg_quantity"]), price=float(row["leg_price"]),
-                               action=row["leg_action"], asset_type=row["leg_asset_type"], instrument_type=row["leg_instrument_type"])]
+        legs = [TransactionLeg(symbol=row["symbol"], quantity=int(row["quantity"]), price=float(row["price"]),
+                               action=row["action"], asset_type=row["asset_type"])]
         return Transaction(timestamp=pd.to_datetime(row["timestamp"]).to_pydatetime(), legs=legs, chainid=int(row["chainid"]), roll_count=int(row["roll_count"]))
 
 
 
     def record_transaction(self, transaction: Transaction):
         """Appends a transaction to the CSV log file."""
-        data = [[transaction.timestamp.isoformat(), transaction.chainid, transaction.roll_count, leg.symbol, leg.quantity, leg.price, leg.action, leg.asset_type, leg.instrument_type] for leg in transaction.legs]
-        df = pd.DataFrame(data, columns=["timestamp", "chainid", "roll_count", "leg_symbol", "leg_quantity", "leg_price", "leg_action", "leg_asset_type", "leg_instrument_type"])
-        df.to_csv(self.transaction_log_file, mode='a', header=not os.path.exists(self.transaction_log_file), index=False)
+        tx = transaction.df.copy()
+        print('-')
+        print(tx.columns)
+        print('-')
+        print(TransactionLogger.LOG_COLUMNS)
+        print('-')
+
+        tx = tx[TransactionLogger.LOG_COLUMNS]
+        # tx = transaction.df[TransactionLogger.LOG_COLUMNS].copy()
+        if 'expires_at' in tx.columns:
+            tx['expires_at'] = tx['expires_at'].isoformat()
+               
+        tx['timestamp'] = transaction.timestamp.isoformat()
+        if transaction.chainid > 0:
+            tx['chainid'] = transaction.chainid
+        if transaction.roll_count > 0:
+            tx['roll_count'] = transaction.roll_count
+        tx.to_csv(self.transaction_log_file, mode='a', header=not os.path.exists(self.transaction_log_file), index=False)
 
     def print_transactions(self):
         """Prints the transaction history."""
@@ -118,5 +136,5 @@ class TransactionLog:
         for transaction in self._load_transactions_from_log():
             print(f"  Timestamp: {transaction.timestamp.isoformat()}, ChainID:{transaction.chainid}, Roll:{transaction.roll_count}")
             for leg in transaction.legs:
-                print(f"    {leg.action}: {leg.symbol}, qty: {leg.quantity}, price: {leg.price:.2f}, type: {leg.instrument_type}, asset:{leg.asset_type}")
+                print(f"    {leg.action}: {leg.symbol}, qty: {leg.quantity}, price: {leg.price:.2f},  asset:{leg.asset_type}")
 
