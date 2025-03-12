@@ -2,7 +2,7 @@ from typing import Optional, List, ClassVar
 import datetime
 import pandas as pd # type: ignore
 
-from .util import option_type, option_expires_at, option_underyling, parse_timestamp
+from .util import option_type, option_expires_at, option_underyling, option_strike, parse_timestamp
 
 
 class Asset:
@@ -17,7 +17,7 @@ class Asset:
     others are generated, a user may add new fields simply 
     by passing them into init
     """
-    TIME_STAMP: ClassVar[str|datetime.datetime] = 'time_stamp'
+    TIME_STAMP: ClassVar[str|datetime.datetime] = 'timestamp'
     SYMBOL: ClassVar[str] = 'symbol'
     QUANTITY: ClassVar[str] = 'quantity'
     PRICE: ClassVar[str] = 'price'
@@ -27,6 +27,7 @@ class Asset:
     MULTIPLIER: ClassVar[str] = 'multiplier'
     DAYS_TO_EXPIRATION: ClassVar[str] = 'days_to_expiration'
     EXPIRES_AT: ClassVar[str|datetime.datetime] = 'expires_at'
+    STRIKE_PRICE: ClassVar[str] = 'strike_price'
     DELTA: ClassVar[str] = 'delta'
     GAMMA: ClassVar[str] = 'gamma'
     THETA: ClassVar[str] = 'theta'
@@ -47,6 +48,7 @@ class Asset:
         MULTIPLIER,
         DAYS_TO_EXPIRATION,
         EXPIRES_AT,
+        STRIKE_PRICE,
         DELTA,
         GAMMA,
         THETA,
@@ -62,6 +64,10 @@ class Asset:
         for field_name in Asset.EXPECTED_COLUMNS:
             if field_name not in fields:
                 fields[field_name] = None
+        # prefer mark (market price) over price if present ( its personal )
+        if 'mark' in fields and fields['mark'] is not None:
+            fields[Asset.PRICE] = fields['mark']
+
         # symbol, quantity, and price are required fields
         if fields[Asset.SYMBOL] is None:
             raise ValueError(f"ASSET needs symobl reference key {Asset.SYMBOL}")
@@ -91,6 +97,7 @@ class Asset:
             default(Asset.ASSET_TYPE, option_type(symbol))
             default(Asset.UNDERLYING_SYMBOL, option_underyling(symbol) )
             default(Asset.DAYS_TO_EXPIRATION, option_expires_at(symbol) )
+            default(Asset.STRIKE_PRICE, option_strike(symbol) )
             default(Asset.EXPIRES_AT, option_expires_at(symbol) )
             default(Asset.MULTIPLIER, 100.0)
         else:
@@ -129,12 +136,8 @@ class Asset:
         h = self.df.to_dict(orient='records')[0]
         if for_json: # convert datetime to iso string
             for date_thing in [Asset.TIME_STAMP, Asset.EXPIRES_AT, Asset.QUOTE_DATE]:
-                if h[date_thing] is not None:
-                    h[date_thing] = h[date_thing].isoformat()
+                if date_thing in h:
+                    if h[date_thing] is not None:
+                        h[date_thing] = h[date_thing].isoformat()
         return h
 
-    def update(self, key, value):
-        if key in self.df.columns:
-            self.df[key] = value
-            return value
-        return None
