@@ -8,6 +8,7 @@ from .util import (
     option_strike, 
     option_type,
     option_underyling,
+    parse_timestamp,
     DEBUG,
     )
 
@@ -22,4 +23,5 @@ __all__ = [
     'option_type',
     'option_underyling',
     'DEBUG',
-]
+    'parse_timestamp',
+    ]
