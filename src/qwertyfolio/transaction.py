@@ -36,7 +36,6 @@ class Transaction:
             self.legs = [Asset(**asset) for asset in assets]
 
         if self.chainid == 0:
-                print("Init a chainid line:39")
                 self.chainid = self.next_chainid()
         for leg in self.legs:
             leg.set_attr(Asset.CHAINID, self.chainid)
@@ -51,7 +50,7 @@ class Transaction:
         # TODO : improve 
         cost: float = 0
         for leg in self.legs:
-            cost += leg.get_attr(Asset.QUANTITY) * leg.get_attr(Asset.PRICE)
+            cost += leg.get_attr(Asset.QUANTITY) * leg.get_attr(Asset.PRICE) * leg.get_attr(Asset.MULTIPLIER)
         return cost
 
     def serialize(self) -> dict:
