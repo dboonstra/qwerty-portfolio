@@ -35,13 +35,14 @@ class Transaction:
             assets = self.df.to_dict(orient='records')
             self.legs = [Asset(**asset) for asset in assets]
 
-        for leg in self.legs:
-            if self.chainid == 0:
+        if self.chainid == 0:
+                print("Init a chainid line:39")
                 self.chainid = self.next_chainid()
-            leg.update(Asset.CHAINID, self.chainid)
+        for leg in self.legs:
+            leg.set_attr(Asset.CHAINID, self.chainid)
             if self.roll_count > 0: 
-                leg.update(Asset.ROLL_COUNT, self.roll_count)
-            leg.update(Asset.TIME_STAMP, self.timestamp)
+                leg.set_attr(Asset.ROLL_COUNT, self.roll_count)
+            leg.set_attr(Asset.TIME_STAMP, self.timestamp)
 
     def calc_cost(self):
         # would be better to plug in a margin estimator 
@@ -73,9 +74,9 @@ class TransactionLogger:
     SHOW_COLUMNS: list[str] = [
         *Asset.EXPECTED_COLUMNS
     ]
+
     def __init__(self, log_file) -> None:
         self.transaction_log_file = log_file
-
 
     def __post_init__(self):
         """Initializes the transaction log."""
@@ -84,22 +85,19 @@ class TransactionLogger:
         if not os.path.exists(self.transaction_log_file): 
             self._write_transaction_log_header() 
 
-
     def _write_transaction_log_header(self):
         df = pd.DataFrame(columns=TransactionLogger.LOG_COLUMNS)
         df.to_csv(self.transaction_log_file, index=False)
 
-
-    def record_transaction(self, transaction: Transaction):
+    def record_transaction(self, transaction: Transaction, cols: list[str] = LOG_COLUMNS):
         """Appends a transaction to the CSV log file."""
         tx = pd.DataFrame(transaction.serialize())
-        tx = tx.reindex(columns=TransactionLogger.LOG_COLUMNS)
+        tx = tx.reindex(columns=cols)
         tx.to_csv(self.transaction_log_file, mode='a', header=False, index=False)
 
-
-    def show_transactions(self, title: str, df: pd.DataFrame):
+    def show_transactions(self, title: str, df: pd.DataFrame, cols: list[str] = SHOW_COLUMNS):
         print(f"# {title}")
-        print(tabulate(df[TransactionLogger.SHOW_COLUMNS], headers='keys', tablefmt='psql'))
+        print(tabulate(df[cols], headers='keys', tablefmt='psql'))
         print()
 
     def print_transactions(self, bychain: bool = False):

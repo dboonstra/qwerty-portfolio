@@ -128,17 +128,17 @@ class PortfolioManager:
 
         # if a transaction asset matches an existing holding
         # then we inherit the chainid 
-        chainfound: bool = False
         for leg in transaction.legs:
-            symbol = leg.get_attr(Asset.Symbol)
+            symbol = leg.get_attr(Asset.SYMBOL)
             holding = self.find_holding(Asset.SYMBOL, symbol)
             if len(holding) > 0:
-                chainfound = True
                 transaction.chainid = holding[0].get_attr(Asset.CHAINID)
                 transaction.roll_count = holding[0].get_attr(Asset.ROLL_COUNT) + 1
+                # update legs with found chain info
+                for leg in transaction.legs:
+                    leg.set_attr(Asset.CHAINID, transaction.chainid)
+                    leg.set_attr(Asset.ROLL_COUNT, transaction.roll_count) 
                 break
-        if not chainfound:
-            transaction.chainid = transaction.next_chainid()
 
         self._update_holding(transaction) 
         self.cash_balance -= cost
@@ -157,7 +157,7 @@ class PortfolioManager:
                 initial_value = qty * holding.get_attr(Asset.AVERAGE_OPEN_PRICE)
                 pnl += current_value - initial_value
             else: 
-                print(f"Warning: No current price found for {holding.symbol}.")
+                print(f"Warning: No current price found for {symbol}.")
         return pnl
 
     def get_portfolio_value(self, current_prices: dict) -> float:
@@ -177,22 +177,22 @@ class PortfolioManager:
         """Prints the current portfolio holdings."""
         print("Current Portfolio:")
         print(f"Cash Balance: ${self.cash_balance:.2f}")
-        df = pd.DataFrame([h.serialize(for_json=True) for h in self.holdings], index=[0])
+        df = pd.DataFrame([h.serialize(for_json=True) for h in self.holdings], index=None)
         tabl = tabulate(df, headers='keys', tablefmt='psql')
         print(tabl)
     
-    def print_transactions(self):
-        self.transactions_log.print_transactions()
+    def print_transactions(self, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
+        self.transactions_log.print_transactions(cols)
 
-    def print_order_chains(self):
+    def print_order_chains(self, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
         """ prints order chains. """
         chainids = list(self.transactions_dict.keys())
         chainids.sort()
         print("Order Chains :")
         for chainid in chainids:
             print(f"  chain: {chainid}")
-            for txlegs in self.transactions_dict[chainid]:
-                df = pd.DataFrame([h.serialize(for_json=True) for h in txlegs], index=[0])
-                tabl = tabulate(df, headers='keys', tablefmt='psql')
-                print(tabl)
+            txlegs = self.transactions_dict[chainid]
+            df = pd.DataFrame([h.serialize(for_json=True) for h in txlegs], index=None)
+            tabl = tabulate(df[cols], headers='keys', tablefmt='psql')
+            print(tabl)
 
