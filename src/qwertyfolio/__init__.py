@@ -1,8 +1,8 @@
 
 
 from .core import PortfolioManager
-from .transaction import Transaction, TransactionLogger, TransactionLeg
-from .holding import Holding
+from .transaction import Transaction, TransactionLogger
+from .assets import Asset
 from .util import (
     option_expires_at, 
     option_strike, 
@@ -15,9 +15,8 @@ from .util import (
 __all__ = [
     'PortfolioManager',
     'Transaction',
-    'TransactionLeg',
     'TransactionLogger',
-    'Holding',
+    'Asset',
     'option_expires_at', 
     'option_strike', 
     'option_type',

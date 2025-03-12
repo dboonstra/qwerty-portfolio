@@ -53,18 +53,16 @@ class Transaction:
             cost += leg.get_attr(Asset.QUANTITY) * leg.get_attr(Asset.PRICE)
         return cost
 
-
+    def serialize(self) -> dict:
+        """Serializes a Transaction object to a dictionary."""
+        pass
 
     def next_chainid(self) -> int:
         Transaction._next_chainid += 1
         return Transaction._next_chainid
 
-    def serialize(self, to_json: bool = False) -> dict:
-        """Serializes a Transaction object to a dictionary."""
-        return [leg.serialize(to_json=to_json) for leg in self.legs]
     
 
-@dataclass
 class TransactionLogger:
     transaction_log_file: str 
 
@@ -75,6 +73,9 @@ class TransactionLogger:
     SHOW_COLUMNS: list[str] = [
         *Asset.EXPECTED_COLUMNS
     ]
+    def __init__(self, log_file) -> None:
+        self.transaction_log_file = log_file
+
 
     def __post_init__(self):
         """Initializes the transaction log."""

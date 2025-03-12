@@ -111,10 +111,18 @@ class Asset:
 
         self.df = pd.DataFrame(fields, index=[0])
 
-    def get_attr(self, key):
+    def get_attr(self, key: str):
         if key in self.df.columns:
             return self.df[key].iloc[0]
         return None
+    
+    def set_attr(self, key: str, val):
+        self.df[key] = val
+
+    def copy(self):
+        return Asset(**self.serialize())
+
+
 
     def serialize(self, for_json: bool = False) -> dict:
         """Serializes a Holding object to a dictionary."""

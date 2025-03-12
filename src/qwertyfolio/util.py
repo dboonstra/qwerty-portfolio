@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
 import pandas as pd  # type: ignore
 from collections import defaultdict
+from typing import Union
 
 
 DEBUG: bool = True
@@ -16,6 +17,7 @@ def debug(*a):
 
 def warn(*a):
     print(*a, file=sys.stderr)
+    return None
 
 def flatten_model(var):
     # export pydantic model to json-izable thingy
@@ -74,4 +76,77 @@ def option_expires_at(symbol: str) -> Optional[datetime.datetime]:
         # Handle cases where the date part is malformed.
         warn(f"Invalid date format in symbol: {symbol}")
         return None
+
+
+def parse_timestamp(timestamp_input: Union[int, str, datetime.date, datetime.datetime]) -> datetime.datetime:
+    """
+    Parses a timestamp from a string, date, or datetime object and returns a datetime object.
+
+    Args:
+        timestamp_input: The timestamp to parse. Can be a string in various formats,
+                         a datetime.date object, or a datetime.datetime object.
+
+    Returns:
+        A datetime.datetime object representing the parsed timestamp.
+
+    Raises:
+        ValueError: If the input string cannot be parsed as a timestamp.
+        TypeError: If the input is not a string, datetime.date, or datetime.datetime object.
+    """
+    if isinstance(timestamp_input, datetime.datetime):
+        return timestamp_input
+    elif isinstance(timestamp_input, datetime.date):
+        return datetime.datetime(timestamp_input.year, timestamp_input.month, timestamp_input.day)
+    elif isinstance(timestamp_input, int):
+        timestamp_input = str(timestamp_input)
+
+    if isinstance(timestamp_input, str):
+        try:
+            # Try parsing as an integer (Unix timestamp)
+            if timestamp_input.isdigit():
+                if len(timestamp_input) == 10:
+                    # Seconds
+                    return datetime.datetime.fromtimestamp(int(timestamp_input), tz=datetime.timezone.utc)
+                elif len(timestamp_input) == 13:
+                    # Milliseconds
+                    return datetime.datetime.fromtimestamp(int(timestamp_input) / 1000, tz=datetime.timezone.utc)
+                else:
+                    raise ValueError("Invalid unix timestamp length")
+
+            # Try parsing with dateutil.parser
+            # from dateutil.parser import parse # type: ignore
+            # return parse(timestamp_input)
+
+            # Try ISO 8601 format
+            return datetime.datetime.fromisoformat(timestamp_input)
+
+
+        except (ValueError, OverflowError):
+            try:
+                # try some common string formats
+                # YYYY/MM/DD or MM/DD/YYYY
+                for fmt in ["%Y/%m/%d", "%m/%d/%Y"]:
+                    try:
+                        return datetime.datetime.strptime(timestamp_input, fmt)
+                    except ValueError:
+                         pass
+                # YYYYMMDD or YYYY-MM-DD
+                for fmt in ["%Y%m%d", "%Y-%m-%d"]:
+                    try:
+                         return datetime.datetime.strptime(timestamp_input, fmt)
+                    except ValueError:
+                         pass
+                
+                # Try with HH:MM:SS
+                for fmt in ["%Y/%m/%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y%m%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
+                    try:
+                        return datetime.datetime.strptime(timestamp_input, fmt)
+                    except ValueError:
+                         pass
+
+                return warn(f"Could not parse timestamp string: {timestamp_input}")
+            except Exception as e:
+                return warn(f"Could not parse timestamp string: {timestamp_input}, Error: {e}")
+    else:
+        return warn(f"Invalid timestamp input type: {type(timestamp_input)}")
 
