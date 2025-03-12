@@ -1,11 +1,6 @@
-import json
-import os
-import sys
-import datetime
-from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
+import datetime
 import pandas as pd # type: ignore
-from collections import defaultdict
 
 from .util import option_type, option_expires_at, option_underyling, parse_timestamp
 
@@ -22,6 +17,7 @@ class Asset:
     others are generated, a user may add new fields simply 
     by passing them into init
     """
+    TIME_STAMP: ClassVar[str|datetime.datetime] = 'time_stamp'
     SYMBOL: ClassVar[str] = 'symbol'
     QUANTITY: ClassVar[str] = 'quantity'
     PRICE: ClassVar[str] = 'price'
@@ -35,6 +31,7 @@ class Asset:
     GAMMA: ClassVar[str] = 'gamma'
     THETA: ClassVar[str] = 'theta'
     QUOTE_DATE: ClassVar[str|datetime.datetime] = 'quote_date'
+    ORDER_TYPE: ClassVar[str] = 'order_type'
     CHAINID: ClassVar[str] = 'chainid'
     ROLL_COUNT: ClassVar[str] = 'roll_count'
 
@@ -54,6 +51,7 @@ class Asset:
         GAMMA,
         THETA,
         QUOTE_DATE,
+        ORDER_TYPE,
         CHAINID,
         ROLL_COUNT,
     ]
@@ -72,18 +70,23 @@ class Asset:
         if fields[Asset.PRICE] is None:
             raise ValueError(f"ASSET needs symobl reference key {Asset.PRICE}")
 
+
+
         # Initializes derived attributes based on the symbol.
         symbol = fields[Asset.SYMBOL]
         isoption = len(symbol) > 12
 
+        # setup defaults
         def default(key,val):
             if fields[key] is None: fields[key] = val
 
+        default(Asset.AVERAGE_OPEN_PRICE, fields[Asset.PRICE])
         default(Asset.CHAINID, 0)
         default(Asset.ROLL_COUNT, 0)
         default(Asset.QUOTE_DATE, datetime.datetime.now())
+        if fields[Asset.ORDER_TYPE] is None:
+            fields[Asset.ORDER_TYPE] = 'sto' if fields[Asset.QUANTITY] < 0 else 'bto'
 
-        # setup defaults
         if isoption:
             default(Asset.ASSET_TYPE, option_type(symbol))
             default(Asset.UNDERLYING_SYMBOL, option_underyling(symbol) )
@@ -92,7 +95,7 @@ class Asset:
             default(Asset.MULTIPLIER, 100.0)
         else:
             if symbol == Asset.CASH_SYMBOL:
-                default(Asset.ASSET_TYPE, 'W')
+                default(Asset.ASSET_TYPE, 'M')
             else:
                 default(Asset.ASSET_TYPE, 'S')
             default(Asset.UNDERLYING_SYMBOL, symbol)
@@ -108,25 +111,22 @@ class Asset:
 
         self.df = pd.DataFrame(fields, index=[0])
 
+    def get_attr(self, key):
+        if key in self.df.columns:
+            return self.df[key].iloc[0]
+        return None
 
     def serialize(self, for_json: bool = False) -> dict:
         """Serializes a Holding object to a dictionary."""
         h = self.df.to_dict(orient='records')[0]
         if for_json: # convert datetime to iso string
-            if h[Asset.EXPIRES_AT] is not None:
-                h[Asset.EXPIRES_AT] = h[Asset.EXPIRES_AT].isoformat()
-            if h[Asset.QUOTE_DATE] is not None:
-                h[Asset.QUOTE_DATE] = h[Asset.QUOTE_DATE].isoformat()
+            for date_thing in [Asset.TIME_STAMP, Asset.EXPIRES_AT, Asset.QUOTE_DATE]:
+                if h[date_thing] is not None:
+                    h[date_thing] = h[date_thing].isoformat()
         return h
 
-
-class Holding(Asset):
-    """
-    Represents a single asset holding (stock or option).
-    """
-
-
-class TransactionLeg(Asset):
-    """
-    Represents a single asset in a transaction (stock or option).
-    """
+    def update(self, key, value):
+        if key in self.df.columns:
+            self.df[key] = value
+            return value
+        return None

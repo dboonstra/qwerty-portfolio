@@ -6,16 +6,10 @@ from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
 from collections import defaultdict
-from .holding import Asset
+from .assets import Asset
 from .util import warn, option_type, option_underyling
+from tabulate import tabulate
 
-
-
-@dataclass
-class TransactionLeg(Asset):
-    """
-    Represents a single asset in a transaction (stock or option).
-    """
 
 @dataclass
 class Transaction:
@@ -25,57 +19,62 @@ class Transaction:
 
     """
     timestamp: datetime.datetime = field(default_factory=datetime.datetime.now)
-    legs: List[TransactionLeg] = field(default_factory=list)
+    legs: List[Asset] = field(default_factory=list)
     chainid : int = 0
     roll_count: int = 0
+    # incrementor for order chains
     df: Optional[pd.DataFrame] = None
+    _next_chainid: ClassVar[int] = 1
 
     def __post_init__(self):
+        # move dataframe into Asset legs if not already there
         if len(self.legs) == 0:
             if self.df is None:
-                raise ValueError("Transaction must have at least one leg.")
-        else:
-            df = pd.DataFrame()
-            for leg in self.legs:
-                df = pd.concat([df, leg.df])
-            self.df = df
-        if self.chainid > 0:
-            self.df['chainid'] = self.chainid
-        if self.roll_count > 0:
-            self.df['roll_count'] = self.roll_count       
-        # TODO update cost calculations for margin impact
-        self.df['cost'] = self.df['quantity'] * self.df['price']
+                raise ValueError("A new Transaction must have at least one leg.")
+            # convert DF to assets
+            assets = self.df.to_dict(orient='records')
+            self.legs = [Asset(**asset) for asset in assets]
 
-    def serialize(self) -> dict:
+        for leg in self.legs:
+            if self.chainid == 0:
+                self.chainid = self.next_chainid()
+            leg.update(Asset.CHAINID, self.chainid)
+            if self.roll_count > 0: 
+                leg.update(Asset.ROLL_COUNT, self.roll_count)
+            leg.update(Asset.TIME_STAMP, self.timestamp)
+
+    def calc_cost(self):
+        # would be better to plug in a margin estimator 
+        # this calculation is best for equities 
+        # and falls short of cash/margin option consideration 
+        # TODO : improve 
+        cost: float = 0
+        for leg in self.legs:
+            cost += leg.get_attr(Asset.QUANTITY) * leg.get_attr(Asset.PRICE)
+        return cost
+
+
+
+    def next_chainid(self) -> int:
+        Transaction._next_chainid += 1
+        return Transaction._next_chainid
+
+    def serialize(self, to_json: bool = False) -> dict:
         """Serializes a Transaction object to a dictionary."""
-        t = vars(self).copy()
-        if isinstance(t['timestamp'], datetime.datetime):
-            t['timestamp'] = t['timestamp'].isoformat()  # json format
-        t['legs'] = [vars(leg) for leg in self.legs]
-        return t
+        return [leg.serialize(to_json=to_json) for leg in self.legs]
+    
 
 @dataclass
 class TransactionLogger:
     transaction_log_file: str 
 
-
-    LOG_COLUMNS = [
-        "timestamp", 
-        "chainid", 
-        "roll_count", 
-        "symbol", 
-        "quantity", 
-        "price", 
-        "cost",
-        "action", 
-        "asset_type",
-        "underlying_symbol",
-        "days_to_expiration",
-        "delta",
-        "gamma",
-        "theta",
-        "quote_date",
+    LOG_COLUMNS: list[str] = [
+        *Asset.EXPECTED_COLUMNS
         ]
+
+    SHOW_COLUMNS: list[str] = [
+        *Asset.EXPECTED_COLUMNS
+    ]
 
     def __post_init__(self):
         """Initializes the transaction log."""
@@ -90,51 +89,32 @@ class TransactionLogger:
         df.to_csv(self.transaction_log_file, index=False)
 
 
-    def _load_transactions_from_log(self) -> List[Transaction]:
-        """Loads transactions from the transaction log file."""
-        transactions: List[Transaction] = []
-        try:
-            df = pd.read_csv(self.transaction_log_file)
-            for index, row in df.iterrows():
-                transaction = self._load_transaction_from_row(row)
-                transactions.append(transaction)
-        except FileNotFoundError:
-            warn(f"Transaction log file not found: {self.transaction_log_file}")
-        return transactions
-
-    def _load_transaction_from_row(self, row: pd.Series) -> Transaction:
-        legs = [TransactionLeg(symbol=row["symbol"], quantity=int(row["quantity"]), price=float(row["price"]),
-                               action=row["action"], asset_type=row["asset_type"])]
-        return Transaction(timestamp=pd.to_datetime(row["timestamp"]).to_pydatetime(), legs=legs, chainid=int(row["chainid"]), roll_count=int(row["roll_count"]))
-
-
-
     def record_transaction(self, transaction: Transaction):
         """Appends a transaction to the CSV log file."""
-        tx = transaction.df.copy()
-        print('-')
-        print(tx.columns)
-        print('-')
-        print(TransactionLogger.LOG_COLUMNS)
-        print('-')
+        tx = pd.DataFrame(transaction.serialize())
+        tx = tx.reindex(columns=TransactionLogger.LOG_COLUMNS)
+        tx.to_csv(self.transaction_log_file, mode='a', header=False, index=False)
 
-        tx = tx[TransactionLogger.LOG_COLUMNS]
-        # tx = transaction.df[TransactionLogger.LOG_COLUMNS].copy()
-        if 'expires_at' in tx.columns:
-            tx['expires_at'] = tx['expires_at'].isoformat()
-               
-        tx['timestamp'] = transaction.timestamp.isoformat()
-        if transaction.chainid > 0:
-            tx['chainid'] = transaction.chainid
-        if transaction.roll_count > 0:
-            tx['roll_count'] = transaction.roll_count
-        tx.to_csv(self.transaction_log_file, mode='a', header=not os.path.exists(self.transaction_log_file), index=False)
 
-    def print_transactions(self):
+    def show_transactions(self, title: str, df: pd.DataFrame):
+        print(f"# {title}")
+        print(tabulate(df[TransactionLogger.SHOW_COLUMNS], headers='keys', tablefmt='psql'))
+        print()
+
+    def print_transactions(self, bychain: bool = False):
         """Prints the transaction history."""
         print("Transaction History:")
-        for transaction in self._load_transactions_from_log():
-            print(f"  Timestamp: {transaction.timestamp.isoformat()}, ChainID:{transaction.chainid}, Roll:{transaction.roll_count}")
-            for leg in transaction.legs:
-                print(f"    {leg.action}: {leg.symbol}, qty: {leg.quantity}, price: {leg.price:.2f},  asset:{leg.asset_type}")
+        df = self.load_transactions_from_log()
+        if bychain:
+            chainids: list = df[Asset.CHAINID].unique()
+            for chainid in chainids:
+                self.show_transactions(f"Chain: {chainid}", df.loc[df[Asset.CHAINID] == chainid])
+        else:
+            self.show_transactions("Transactions")
 
+    def load_transactions_from_log(self) -> pd.DataFrame:
+        """Loads transactions from the transaction log file."""
+        try:
+            return pd.read_csv(self.transaction_log_file)
+        except Exception as e:
+            return warn(f"Error loading transactions from log file: {self.transaction_log_file} - {e}")
