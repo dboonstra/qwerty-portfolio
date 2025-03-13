@@ -1,6 +1,6 @@
 
 
-from .core import PortfolioManager
+from .core import PortfolioManager, print_tabulate
 from .transaction import Transaction, TransactionLogger
 from .assets import Asset
 from .util import (
@@ -24,4 +24,5 @@ __all__ = [
     'option_underyling',
     'DEBUG',
     'parse_timestamp',
+    'print_tabulate'
     ]

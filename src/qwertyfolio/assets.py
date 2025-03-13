@@ -3,6 +3,17 @@ import datetime
 import pandas as pd # type: ignore
 
 from .util import option_type, option_expires_at, option_underyling, option_strike, parse_timestamp
+from .globals import Gl
+
+class Gl:
+    """Class of term strings"""
+    # order actions
+    BUY_TO_OPEN = "Buy to Open"
+    BUY_TO_CLOSE = "Buy to Close"
+    SELL_TO_OPEN = "Sell to Open"
+    SELL_TO_CLOSE = "Sell to Close"
+
+    # order types
 
 
 class Asset:
@@ -91,7 +102,7 @@ class Asset:
         default(Asset.ROLL_COUNT, 0)
         default(Asset.QUOTE_DATE, datetime.datetime.now())
         if fields[Asset.ORDER_TYPE] is None:
-            fields[Asset.ORDER_TYPE] = 'sto' if fields[Asset.QUANTITY] < 0 else 'bto'
+            fields[Asset.ORDER_TYPE] = Gl.SELL_TO_OPEN if fields[Asset.QUANTITY] < 0 else Gl.BUY_TO_OPEN
 
         if isoption:
             default(Asset.ASSET_TYPE, option_type(symbol))

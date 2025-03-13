@@ -9,6 +9,8 @@ from collections import defaultdict
 from .assets import Asset
 from .util import warn, option_type, option_underyling
 from tabulate import tabulate
+from .globals import Gl
+
 
 
 @dataclass
@@ -20,7 +22,7 @@ class Transaction:
     """
     timestamp: datetime.datetime = field(default_factory=datetime.datetime.now)
     legs: List[Asset] = field(default_factory=list)
-    chainid : int = 0
+    chainid : int = 1
     roll_count: int = 0
     # incrementor for order chains
     df: Optional[pd.DataFrame] = None
@@ -35,8 +37,9 @@ class Transaction:
             assets = self.df.to_dict(orient='records')
             self.legs = [Asset(**asset) for asset in assets]
 
-        if self.chainid == 0:
-                self.chainid = self.next_chainid()
+        if self.legs[0].get_attr(Asset.SYMBOL) != Asset.CASH_SYMBOL:
+            self.chainid = self.next_chainid()
+
         for leg in self.legs:
             leg.set_attr(Asset.CHAINID, self.chainid)
             if self.roll_count > 0: 

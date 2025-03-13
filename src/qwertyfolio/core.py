@@ -9,6 +9,7 @@ from collections import defaultdict
 from tabulate import tabulate
 
 from .transaction import Transaction, TransactionLogger
+from .globals import Gl
 from .assets import Asset
 from .util import (
     option_underyling, 
@@ -19,6 +20,9 @@ from .util import (
     warn
 )
 
+def print_tabulate(df: pd.DataFrame, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
+        tabl = tabulate(df[cols], headers='keys', tablefmt='psql')
+        print(tabl)
 
 
 class PortfolioManager:
@@ -37,6 +41,7 @@ class PortfolioManager:
         self.portfolio_file = portfolio_file
         self.transaction_log_file = transaction_log_file
         self.holdings: list[Asset] = []
+        self.order_chains: dict[str:list[Asset]] = {}
         self.cash_balance: float = 0.0
         self.transactions: List[Asset] = []
         self.transactions_dict = defaultdict(list) # key by chain id
@@ -50,6 +55,17 @@ class PortfolioManager:
                 data = json.load(f)
                 self.cash_balance = data.get("cash_balance", 0.0)
                 self.holdings: list[Asset] = [Asset(h) for h in data.get("holdings", [])]
+            self.order_chains = self._build_order_chains()
+
+    def _build_order_chains(self) -> dict[str:list[Asset]]:
+        """ create dict of holdings that is keyed by order chain id """
+        chaindict: dict[str:list[Asset]] = {}
+        for holding in self.holdings:
+            chainid = holding.get_attr(Asset.CHAINID)
+            if chainid not in chaindict:
+                chaindict[chainid] = []
+            chaindict[chainid].append(holding)
+        return chaindict
 
     def _save_portfolio(self):
         """Saves portfolio data to the JSON file."""
@@ -68,17 +84,21 @@ class PortfolioManager:
         Records a transaction with timestamp and details.
         """
         tx_legs: list = [leg.copy() for leg in transaction.legs]
+        # maintain order_chain history
         if transaction.chainid not in self.transactions_dict:
             self.transactions_dict[transaction.chainid] = []    
         self.transactions_dict[transaction.chainid].extend(tx_legs)
         self.transactions.extend(tx_legs)
+        # record to file with logger
         self.transactions_log.record_transaction(transaction)
+
+        # save portfolio file
         self._save_portfolio()
 
     def update_cash_balance(self, amount:float):
         """Adds cash to the portfolio."""
         self.cash_balance += amount
-        transaction = Transaction(legs=[Asset(symbol=Asset.CASH_SYMBOL, quantity=amount, price=1.0)])
+        transaction = Transaction(legs=[Asset(symbol=Asset.CASH_SYMBOL, chainid=1, quantity=amount, price=1.0)])
         self._record_transaction(transaction)
     
     def find_holding(self, key, val, filter:list[Asset] = [], not_in: bool = False) -> list[Asset]:
@@ -96,61 +116,156 @@ class PortfolioManager:
                     ret.append(asset)
         return ret
     
-    def _update_holding(self,transaction: Transaction):
-        for leg in transaction.legs:
-            holdings = self.find_holding(Asset.SYMBOL, leg.get_attr(Asset.SYMBOL))
-            if len(holdings) > 0:
-                total_qty = leg.get_attr(Asset.QUANTITY) + holdings[0].get_attr(Asset.QUANTITY)
+    def holding_by_dict(self) -> dict[str:Asset]:
+        ret: dict[str:Asset] = {}
+        for h in self.holdings:
+            sym = h.get_attr(Asset.SYMBOL)
+            if sym not in ret:
+                ret[h.get_attr(Asset.SYMBOL)] = h
+            else:
+                warn(f"Portfolio Holding has duplicate symbol - {sym}")
+        return ret
+ 
+
+    def _update_holding(self,transaction: Transaction) -> bool:
+        hd = self.holding_by_dict()
+        # merge legs to holdings
+
+            
+        def _sync_ids(transaction, hold_asset):
+            # match the chainid and roll_count to found asset
+            transaction.chainid = hold_asset.get_attr(Asset.CHAINID)
+            transaction.roll_count = hold_asset.get_attr(Asset.ROLL_COUNT) + 1
+            for leg in transaction.legs:
+                leg.set_attr(Asset.CHAINID, transaction.chainid)
+                leg.set_attr(Asset.ROLL_COUNT, transaction.roll_count)
+
+        for orig_leg in transaction.legs:
+            # make a copy so that original is logged in transaction logs
+            leg = orig_leg.copy()
+            symbol = leg.get_attr(Asset.SYMBOL)            
+
+            # cut
+            quantity = leg.get_attr(Asset.QUANTITY)
+            print(f"\nLEG in update_holding: {symbol} ({quantity}) \n" )
+
+            # if this is in portfolio we add or subtract
+            if symbol in hd:
+                _sync_ids(transaction, hd[symbol])
+                # merge current holding data to new leg data 
+                hol_qty = hd[symbol].get_attr(Asset.QUANTITY)
+                leg_qty = leg.get_attr(Asset.QUANTITY)
+                total_qty = hol_qty + leg_qty
+                hol_avg = hd[symbol].get_attr(Asset.AVERAGE_OPEN_PRICE)
+                leg_price = leg.get_attr(Asset.PRICE)
+                # carry over average price with new calc
                 if total_qty == 0:
-                    # close - remove the holding
-                    self.holdings = self.find_holding(Asset.SYMBOL, leg.get_attr(Asset.SYMBOL), not_in=True)
+                    leg.set_attr(Asset.AVERAGE_OPEN_PRICE, leg_price)
                 else:
-                    oldsum = holdings[0].get_attr(Asset.PRICE) * holdings[0].get_attr(Asset.QUANTITY)
-                    cursum = leg.get_attr(Asset.PRICE) * leg.get_attr(Asset.QUANTITY)
-                    holdings[0].df[Asset.AVERAGE_OPEN_PRICE] = (oldsum + cursum) / total_qty
-                    holdings[0].df[Asset.QUANTITY] = total_qty
-                    holdings[0].df[Asset.ROLL_COUNT] = transaction.roll_count
+                    leg.set_attr(Asset.AVERAGE_OPEN_PRICE, (hol_qty * hol_avg + leg_qty * leg_price) / (hol_qty + leg_qty))
+                # carry over new calculated quantity
+                leg.set_attr(Asset.QUANTITY, total_qty)
+                # set held asset for removal with Qty 0 
+                hd[symbol].set_attr(Asset.QUANTITY, 0)
+                self.holdings.append(leg)
+            elif leg.get_attr(Asset.ORDER_TYPE) == Gl.BUY_TO_CLOSE or leg.get_attr(Asset.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
+                warn(f"Port Holding update found close for {symbol} with no assets")
+                return False
             else:
                 self.holdings.append(leg)
 
-    def execute_transaction(self, transaction : Transaction) -> bool:
-        """
-        Executes a transaction with multiple legs.
+        # remove 0 qty items
+        self.holdings = [ h for h in self.holdings if h.get_attr(Asset.QUANTITY) != 0]
+        # save as file
+        self._save_portfolio()
+        # reset order chains
+        self.order_chains = self._build_order_chains()
+        return True
 
-        Args:
-            transaction : A list of transaction legs.
-        """
+
+
+
+    def execute_transaction(self, transaction : Transaction) -> bool:
         # Check for sufficient funds
         cost = transaction.calc_cost() 
         if self.cash_balance < cost and cost > 0:
             warn("Not enough cash to execute this order")
             return False
+        # update holdings without error
+        if self._update_holding(transaction):
+            # update cash 
+            self.cash_balance -= cost
+            # log activity
+            self._record_transaction(transaction)
+            return True
+        else:
+            return False
 
-        # if a transaction asset matches an existing holding
-        # then we inherit the chainid 
-        for leg in transaction.legs:
-            symbol = leg.get_attr(Asset.SYMBOL)
-            holding = self.find_holding(Asset.SYMBOL, symbol)
+    def _reset_order_type(self, legs : list[Asset], buy_type: str, sell_type: str):
+        """ set order_type of leg assets """
+        for leg in legs:
+            order_type = buy_type if leg.get_attr(Asset.QUANTITY) > 0 else sell_type
+            leg.set_attr(Asset.ORDER_TYPE, order_type)
 
-            if len(holding) > 0:
-                holding_qty = holding[0].get_attr(Asset.QUANTITY)
-                leg_qty = leg.get_attr(Asset.QUANTITY)
-                if leg_qty > 0 and holding_qty < 0:
-                    leg.set_attr(Asset.ORDER_TYPE, 'btc')
-                elif leg_qty < 0 and holding_qty > 0:
-                    leg.set_attr(Asset.ORDER_TYPE, 'stc')
-                transaction.chainid = holding[0].get_attr(Asset.CHAINID)
-                transaction.roll_count = holding[0].get_attr(Asset.ROLL_COUNT) + 1
-                # update legs with found chain info
-                        
-        for leg in transaction.legs:
-            leg.set_attr(Asset.CHAINID, transaction.chainid)
-            leg.set_attr(Asset.ROLL_COUNT, transaction.roll_count) 
+    def execute_close(self, transaction : Transaction) -> bool:
+        """
+        Executes a transaction with multiple legs.  All orders are Close orders
+        Args:
+            transaction : A transaction object containing a list of transaction legs.
+        """
+        self._reset_order_type(transaction.legs, Gl.BUY_TO_CLOSE, Gl.SELL_TO_CLOSE)        
+        return self.execute_transaction(transaction)
+
+    def execute_open(self, transaction : Transaction) -> bool:
+        """
+        Executes a transaction with multiple legs. All orders are Open orders
+        Args:
+            transaction : A transaction object containing a list of transaction legs.
+        """
+        self._reset_order_type(transaction.legs, Gl.BUY_TO_OPEN, Gl.SELL_TO_OPEN)
+        return self.execute_transaction(transaction)
         
-        self._update_holding(transaction) 
-        self.cash_balance -= cost
-        self._record_transaction(transaction)
-        return True
+
+    def execute_roll(self, transaction : Transaction) -> bool:
+        """
+        Executes a transaction with multiple legs. Mix of Open and Close
+        # find the assets that are rolling 
+        # carry over the chainid for order_chain and +1 roll_count
+        Args:
+            transaction : A transaction object containing a list of transaction legs.
+        """
+        noclose: bool = True
+        for leg in transaction.legs:
+
+            leg_found_in_holding: bool = False
+            for holding in self.holdings:
+                if holding.get_attr(Asset.SYMBOL) == leg.get_attr(Asset.SYMBOL):
+                    leg_found_in_holding = True
+                    if holding.get_attr(Asset.QUANTITY) < 0:
+                        if leg.get_attr(Asset.QUANTITY) > 0:
+                            leg.set_attr(Asset.ORDER_TYPE, Gl.BUY_TO_CLOSE)
+                            noclose = False
+                        else:
+                            leg.set_attr(Asset.ORDER_TYPE, Gl.SELL_TO_OPEN)
+                    else:
+                        if leg.get_attr(Asset.QUANTITY) < 0:
+                            leg.set_attr(Asset.ORDER_TYPE, Gl.SELL_TO_CLOSE)
+                            noclose = False
+                        else:
+                            leg.set_attr(Asset.ORDER_TYPE, Gl.BUY_TO_OPEN)
+            if leg_found_in_holding:
+                continue
+            if leg.get_attr(Asset.QUANTITY) > 0:
+                leg.set_attr(Asset.ORDER_TYPE, Gl.BUY_TO_OPEN)
+            else:
+                leg.set_attr(Asset.ORDER_TYPE, Gl.SELL_TO_OPEN)
+
+
+        if noclose:
+            warn(f"Roll of transaction chain missing closure order")
+            return False
+
+        return self.execute_transaction(transaction)
 
 
     def calculate_pnl(self, current_prices):
@@ -185,8 +300,7 @@ class PortfolioManager:
         print("Current Portfolio:")
         print(f"Cash Balance: ${self.cash_balance:.2f}")
         df = pd.DataFrame([h.serialize(for_json=True) for h in self.holdings], index=None)
-        tabl = tabulate(df[cols], headers='keys', tablefmt='psql')
-        print(tabl)
+        print_tabulate(df, cols)
     
     def print_transactions(self, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
         self.transactions_log.print_transactions(cols)
@@ -199,7 +313,10 @@ class PortfolioManager:
         for chainid in chainids:
             print(f"  chain: {chainid}")
             txlegs = self.transactions_dict[chainid]
+            if chainid in self.order_chains:
+                txlegs.extend(self.order_chains[chainid])
             df = pd.DataFrame([h.serialize(for_json=True) for h in txlegs], index=None)
-            tabl = tabulate(df[cols], headers='keys', tablefmt='psql')
-            print(tabl)
+            print_tabulate(df, cols)
+
+
 
