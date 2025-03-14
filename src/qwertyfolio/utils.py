@@ -13,9 +13,10 @@ def warn(*a):
 def print_tabulate(df: pd.DataFrame, cols: list[str] = [], title: str = None):
     """ """
     if title is not None: print(f"# {title}")
-    if len(cols) == 0:
+    if df.empty:
+        print("__ No data found in frame __")
+    elif len(cols) == 0:
         print(tabulate(df, headers='keys', tablefmt='psql'))
-        pass
     else:
         print(tabulate(df[cols], headers='keys', tablefmt='psql'))
     print()
