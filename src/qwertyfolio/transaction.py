@@ -1,15 +1,10 @@
-import json
-import os
-import sys
 import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
-from collections import defaultdict
-from .assets import Asset
-from .util import warn, option_type, option_underyling
-from tabulate import tabulate
+
 from .globals import Gl
+from .assets import Asset
 
 
 
@@ -65,57 +60,3 @@ class Transaction:
         return Transaction._next_chainid
 
     
-
-class TransactionLogger:
-    transaction_log_file: str 
-
-    LOG_COLUMNS: list[str] = [
-        *Asset.EXPECTED_COLUMNS
-        ]
-
-    SHOW_COLUMNS: list[str] = [
-        *Asset.EXPECTED_COLUMNS
-    ]
-
-    def __init__(self, log_file) -> None:
-        self.transaction_log_file = log_file
-
-    def __post_init__(self):
-        """Initializes the transaction log."""
-        if not self.transaction_log_file.endswith(".csv"):
-            raise ValueError("Transaction log file must be a CSV file.")
-        if not os.path.exists(self.transaction_log_file): 
-            self._write_transaction_log_header() 
-
-    def _write_transaction_log_header(self):
-        df = pd.DataFrame(columns=TransactionLogger.LOG_COLUMNS)
-        df.to_csv(self.transaction_log_file, index=False)
-
-    def record_transaction(self, transaction: Transaction, cols: list[str] = LOG_COLUMNS):
-        """Appends a transaction to the CSV log file."""
-        tx = pd.DataFrame(transaction.serialize())
-        tx = tx.reindex(columns=cols)
-        tx.to_csv(self.transaction_log_file, mode='a', header=False, index=False)
-
-    def show_transactions(self, title: str, df: pd.DataFrame, cols: list[str] = SHOW_COLUMNS):
-        print(f"# {title}")
-        print(tabulate(df[cols], headers='keys', tablefmt='psql'))
-        print()
-
-    def print_transactions(self, bychain: bool = False):
-        """Prints the transaction history."""
-        print("Transaction History:")
-        df = self.load_transactions_from_log()
-        if bychain:
-            chainids: list = df[Gl.CHAINID].unique()
-            for chainid in chainids:
-                self.show_transactions(f"Chain: {chainid}", df.loc[df[Gl.CHAINID] == chainid])
-        else:
-            self.show_transactions("Transactions")
-
-    def load_transactions_from_log(self) -> pd.DataFrame:
-        """Loads transactions from the transaction log file."""
-        try:
-            return pd.read_csv(self.transaction_log_file)
-        except Exception as e:
-            return warn(f"Error loading transactions from log file: {self.transaction_log_file} - {e}")
