@@ -1,28 +1,19 @@
 import json
 import os
-import sys
-import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
 from collections import defaultdict
-from tabulate import tabulate
 
-from .transaction import Transaction, TransactionLogger
+from .transaction import Transaction
+from .logger import TransactionLogger
 from .globals import Gl
 from .assets import Asset
-from .util import (
-    option_underyling, 
-    option_expires_at, 
-    option_strike, 
-    option_type, 
-    debug, 
+from .utils import (
+    print_tabulate,
     warn
 )
 
-def print_tabulate(df: pd.DataFrame, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
-        tabl = tabulate(df[cols], headers='keys', tablefmt='psql')
-        print(tabl)
 
 
 class PortfolioManager:
@@ -295,28 +286,31 @@ class PortfolioManager:
 
         return total_value  
     
-    def print_portfolio(self, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
+    def print_portfolio(self):
         """Prints the current portfolio holdings."""
-        print("Current Portfolio:")
+        print("____ Current Portfolio ____")
         print(f"Cash Balance: ${self.cash_balance:.2f}")
         df = pd.DataFrame([h.serialize(for_json=True) for h in self.holdings], index=None)
-        print_tabulate(df, cols)
-    
-    def print_transactions(self, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
-        self.transactions_log.print_transactions(cols)
+        # borrow show_columns from the logger
+        print_tabulate(df=df, cols=self.transactions_log.show_columns)
 
-    def print_order_chains(self, cols: list[str] = TransactionLogger.SHOW_COLUMNS):
+    
+    def print_transactions(self):
+        self.transactions_log.print_transactions()
+
+    def print_order_chains(self):
         """ prints order chains. """
         chainids = list(self.transactions_dict.keys())
         chainids.sort()
-        print("Order Chains :")
+        print("____ Order Chains ____")
         for chainid in chainids:
-            print(f"  chain: {chainid}")
+            print(f"\tOrder chain: {chainid}")
             txlegs = self.transactions_dict[chainid]
             if chainid in self.order_chains:
                 txlegs.extend(self.order_chains[chainid])
             df = pd.DataFrame([h.serialize(for_json=True) for h in txlegs], index=None)
-            print_tabulate(df, cols)
+            # borrow show_columns from the logger
+            print_tabulate(df=df, cols=self.transactions_log.show_columns)
 
 
 
