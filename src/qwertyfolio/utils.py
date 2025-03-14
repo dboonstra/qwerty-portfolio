@@ -1,11 +1,7 @@
-import json
-import os
 import sys
 import datetime
-from dataclasses import dataclass, field
-from typing import Optional, List, ClassVar
+from typing import Optional
 import pandas as pd  # type: ignore
-from collections import defaultdict
 from typing import Union
 from tabulate import tabulate
 
@@ -29,17 +25,6 @@ def print_tabulate(df: pd.DataFrame, cols: list[str] = [], title: str = None):
     else:
         print(tabulate(df[cols], headers='keys', tablefmt='psql'))
     print()
-
-def flatten_model(var):
-    # export pydantic model to json-izable thingy
-    vardump = getattr(var, 'model_dump', None)
-    if callable(vardump):
-        return vardump(mode='json')
-    return var
-
-def dump_model(var):
-    # to dump a model to stdout 
-    print(json.dumps(flatten_model(var), indent=4))
 
 def option_strike(symbol: str) -> float:
     """
