@@ -18,6 +18,7 @@ __all__ = [
     'Transaction',
     'TransactionLogger',
     'Asset',
+    'Gl',
     'option_expires_at', 
     'option_strike', 
     'option_type',

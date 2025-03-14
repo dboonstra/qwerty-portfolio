@@ -37,14 +37,14 @@ class Transaction:
             assets = self.df.to_dict(orient='records')
             self.legs = [Asset(**asset) for asset in assets]
 
-        if self.legs[0].get_attr(Asset.SYMBOL) != Asset.CASH_SYMBOL:
+        if self.legs[0].get_attr(Gl.SYMBOL) != Gl.CASH_SYMBOL:
             self.chainid = self.next_chainid()
 
         for leg in self.legs:
-            leg.set_attr(Asset.CHAINID, self.chainid)
+            leg.set_attr(Gl.CHAINID, self.chainid)
             if self.roll_count > 0: 
-                leg.set_attr(Asset.ROLL_COUNT, self.roll_count)
-            leg.set_attr(Asset.TIME_STAMP, self.timestamp)
+                leg.set_attr(Gl.ROLL_COUNT, self.roll_count)
+            leg.set_attr(Gl.TIME_STAMP, self.timestamp)
 
     def calc_cost(self):
         # would be better to plug in a margin estimator 
@@ -53,7 +53,7 @@ class Transaction:
         # TODO : improve 
         cost: float = 0
         for leg in self.legs:
-            cost += leg.get_attr(Asset.QUANTITY) * leg.get_attr(Asset.PRICE) * leg.get_attr(Asset.MULTIPLIER)
+            cost += leg.get_attr(Gl.QUANTITY) * leg.get_attr(Gl.PRICE) * leg.get_attr(Gl.MULTIPLIER)
         return cost
 
     def serialize(self) -> dict:
@@ -107,9 +107,9 @@ class TransactionLogger:
         print("Transaction History:")
         df = self.load_transactions_from_log()
         if bychain:
-            chainids: list = df[Asset.CHAINID].unique()
+            chainids: list = df[Gl.CHAINID].unique()
             for chainid in chainids:
-                self.show_transactions(f"Chain: {chainid}", df.loc[df[Asset.CHAINID] == chainid])
+                self.show_transactions(f"Chain: {chainid}", df.loc[df[Gl.CHAINID] == chainid])
         else:
             self.show_transactions("Transactions")
 

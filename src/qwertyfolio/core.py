@@ -61,7 +61,7 @@ class PortfolioManager:
         """ create dict of holdings that is keyed by order chain id """
         chaindict: dict[str:list[Asset]] = {}
         for holding in self.holdings:
-            chainid = holding.get_attr(Asset.CHAINID)
+            chainid = holding.get_attr(Gl.CHAINID)
             if chainid not in chaindict:
                 chaindict[chainid] = []
             chaindict[chainid].append(holding)
@@ -98,7 +98,7 @@ class PortfolioManager:
     def update_cash_balance(self, amount:float):
         """Adds cash to the portfolio."""
         self.cash_balance += amount
-        transaction = Transaction(legs=[Asset(symbol=Asset.CASH_SYMBOL, chainid=1, quantity=amount, price=1.0)])
+        transaction = Transaction(legs=[Asset(symbol=Gl.CASH_SYMBOL, chainid=1, quantity=amount, price=1.0)])
         self._record_transaction(transaction)
     
     def find_holding(self, key, val, filter:list[Asset] = [], not_in: bool = False) -> list[Asset]:
@@ -119,9 +119,9 @@ class PortfolioManager:
     def holding_by_dict(self) -> dict[str:Asset]:
         ret: dict[str:Asset] = {}
         for h in self.holdings:
-            sym = h.get_attr(Asset.SYMBOL)
+            sym = h.get_attr(Gl.SYMBOL)
             if sym not in ret:
-                ret[h.get_attr(Asset.SYMBOL)] = h
+                ret[h.get_attr(Gl.SYMBOL)] = h
             else:
                 warn(f"Portfolio Holding has duplicate symbol - {sym}")
         return ret
@@ -134,48 +134,48 @@ class PortfolioManager:
             
         def _sync_ids(transaction, hold_asset):
             # match the chainid and roll_count to found asset
-            transaction.chainid = hold_asset.get_attr(Asset.CHAINID)
-            transaction.roll_count = hold_asset.get_attr(Asset.ROLL_COUNT) + 1
+            transaction.chainid = hold_asset.get_attr(Gl.CHAINID)
+            transaction.roll_count = hold_asset.get_attr(Gl.ROLL_COUNT) + 1
             for leg in transaction.legs:
-                leg.set_attr(Asset.CHAINID, transaction.chainid)
-                leg.set_attr(Asset.ROLL_COUNT, transaction.roll_count)
+                leg.set_attr(Gl.CHAINID, transaction.chainid)
+                leg.set_attr(Gl.ROLL_COUNT, transaction.roll_count)
 
         for orig_leg in transaction.legs:
             # make a copy so that original is logged in transaction logs
             leg = orig_leg.copy()
-            symbol = leg.get_attr(Asset.SYMBOL)            
+            symbol = leg.get_attr(Gl.SYMBOL)            
 
             # cut
-            quantity = leg.get_attr(Asset.QUANTITY)
+            quantity = leg.get_attr(Gl.QUANTITY)
             print(f"\nLEG in update_holding: {symbol} ({quantity}) \n" )
 
             # if this is in portfolio we add or subtract
             if symbol in hd:
                 _sync_ids(transaction, hd[symbol])
                 # merge current holding data to new leg data 
-                hol_qty = hd[symbol].get_attr(Asset.QUANTITY)
-                leg_qty = leg.get_attr(Asset.QUANTITY)
+                hol_qty = hd[symbol].get_attr(Gl.QUANTITY)
+                leg_qty = leg.get_attr(Gl.QUANTITY)
                 total_qty = hol_qty + leg_qty
-                hol_avg = hd[symbol].get_attr(Asset.AVERAGE_OPEN_PRICE)
-                leg_price = leg.get_attr(Asset.PRICE)
+                hol_avg = hd[symbol].get_attr(Gl.AVERAGE_OPEN_PRICE)
+                leg_price = leg.get_attr(Gl.PRICE)
                 # carry over average price with new calc
                 if total_qty == 0:
-                    leg.set_attr(Asset.AVERAGE_OPEN_PRICE, leg_price)
+                    leg.set_attr(Gl.AVERAGE_OPEN_PRICE, leg_price)
                 else:
-                    leg.set_attr(Asset.AVERAGE_OPEN_PRICE, (hol_qty * hol_avg + leg_qty * leg_price) / (hol_qty + leg_qty))
+                    leg.set_attr(Gl.AVERAGE_OPEN_PRICE, (hol_qty * hol_avg + leg_qty * leg_price) / (hol_qty + leg_qty))
                 # carry over new calculated quantity
-                leg.set_attr(Asset.QUANTITY, total_qty)
+                leg.set_attr(Gl.QUANTITY, total_qty)
                 # set held asset for removal with Qty 0 
-                hd[symbol].set_attr(Asset.QUANTITY, 0)
+                hd[symbol].set_attr(Gl.QUANTITY, 0)
                 self.holdings.append(leg)
-            elif leg.get_attr(Asset.ORDER_TYPE) == Gl.BUY_TO_CLOSE or leg.get_attr(Asset.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
+            elif leg.get_attr(Gl.ORDER_TYPE) == Gl.BUY_TO_CLOSE or leg.get_attr(Gl.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
                 warn(f"Port Holding update found close for {symbol} with no assets")
                 return False
             else:
                 self.holdings.append(leg)
 
         # remove 0 qty items
-        self.holdings = [ h for h in self.holdings if h.get_attr(Asset.QUANTITY) != 0]
+        self.holdings = [ h for h in self.holdings if h.get_attr(Gl.QUANTITY) != 0]
         # save as file
         self._save_portfolio()
         # reset order chains
@@ -204,8 +204,8 @@ class PortfolioManager:
     def _reset_order_type(self, legs : list[Asset], buy_type: str, sell_type: str):
         """ set order_type of leg assets """
         for leg in legs:
-            order_type = buy_type if leg.get_attr(Asset.QUANTITY) > 0 else sell_type
-            leg.set_attr(Asset.ORDER_TYPE, order_type)
+            order_type = buy_type if leg.get_attr(Gl.QUANTITY) > 0 else sell_type
+            leg.set_attr(Gl.ORDER_TYPE, order_type)
 
     def execute_close(self, transaction : Transaction) -> bool:
         """
@@ -239,26 +239,26 @@ class PortfolioManager:
 
             leg_found_in_holding: bool = False
             for holding in self.holdings:
-                if holding.get_attr(Asset.SYMBOL) == leg.get_attr(Asset.SYMBOL):
+                if holding.get_attr(Gl.SYMBOL) == leg.get_attr(Gl.SYMBOL):
                     leg_found_in_holding = True
-                    if holding.get_attr(Asset.QUANTITY) < 0:
-                        if leg.get_attr(Asset.QUANTITY) > 0:
-                            leg.set_attr(Asset.ORDER_TYPE, Gl.BUY_TO_CLOSE)
+                    if holding.get_attr(Gl.QUANTITY) < 0:
+                        if leg.get_attr(Gl.QUANTITY) > 0:
+                            leg.set_attr(Gl.ORDER_TYPE, Gl.BUY_TO_CLOSE)
                             noclose = False
                         else:
-                            leg.set_attr(Asset.ORDER_TYPE, Gl.SELL_TO_OPEN)
+                            leg.set_attr(Gl.ORDER_TYPE, Gl.SELL_TO_OPEN)
                     else:
-                        if leg.get_attr(Asset.QUANTITY) < 0:
-                            leg.set_attr(Asset.ORDER_TYPE, Gl.SELL_TO_CLOSE)
+                        if leg.get_attr(Gl.QUANTITY) < 0:
+                            leg.set_attr(Gl.ORDER_TYPE, Gl.SELL_TO_CLOSE)
                             noclose = False
                         else:
-                            leg.set_attr(Asset.ORDER_TYPE, Gl.BUY_TO_OPEN)
+                            leg.set_attr(Gl.ORDER_TYPE, Gl.BUY_TO_OPEN)
             if leg_found_in_holding:
                 continue
-            if leg.get_attr(Asset.QUANTITY) > 0:
-                leg.set_attr(Asset.ORDER_TYPE, Gl.BUY_TO_OPEN)
+            if leg.get_attr(Gl.QUANTITY) > 0:
+                leg.set_attr(Gl.ORDER_TYPE, Gl.BUY_TO_OPEN)
             else:
-                leg.set_attr(Asset.ORDER_TYPE, Gl.SELL_TO_OPEN)
+                leg.set_attr(Gl.ORDER_TYPE, Gl.SELL_TO_OPEN)
 
 
         if noclose:
@@ -272,11 +272,11 @@ class PortfolioManager:
         """Calculates the Profit and Loss (PnL) of the portfolio."""
         pnl = 0.0
         for holding in self.holdings:
-            symbol = holding.get_attr(Asset.SYMBOL)
+            symbol = holding.get_attr(Gl.SYMBOL)
             if symbol in current_prices:
-                qty = holding.get_attr(Asset.QUANTITY)
+                qty = holding.get_attr(Gl.QUANTITY)
                 current_value = qty * current_prices[symbol]
-                initial_value = qty * holding.get_attr(Asset.AVERAGE_OPEN_PRICE)
+                initial_value = qty * holding.get_attr(Gl.AVERAGE_OPEN_PRICE)
                 pnl += current_value - initial_value
             else: 
                 print(f"Warning: No current price found for {symbol}.")
@@ -286,9 +286,9 @@ class PortfolioManager:
         """Calculates the total value of the portfolio, including cash."""
         total_value = self.cash_balance
         for holding in self.holdings:
-            symbol = holding.get_attr(Asset.SYMBOL)
+            symbol = holding.get_attr(Gl.SYMBOL)
             if symbol in current_prices:
-                qty = holding.get_attr(Asset.QUANTITY)
+                qty = holding.get_attr(Gl.QUANTITY)
                 total_value += qty * current_prices[symbol]
             else: 
                 print(f"Warning: No current price found for {holding.symbol}.")
