@@ -2,10 +2,12 @@ import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
+from numpy import int64 
+
 
 from .globals import Gl
 from .assets import Asset
-from .utils import parse_timestamp
+from .utils import warn, parse_timestamp
 
 
 
@@ -16,7 +18,7 @@ class Transaction:
     legs may be introduced as array of legs or DF of legs
 
     """
-    timestamp: Optional[int|str|datetime.datetime] = field(default_factory=datetime.datetime.now)
+    timestamp: Optional[int64|int|str|datetime.datetime] = field(default_factory=datetime.datetime.now)
     legs: List[Asset] = field(default_factory=list)
     chainid : int = 1
     roll_count: int = 0
@@ -25,8 +27,8 @@ class Transaction:
     _next_chainid: ClassVar[int] = 1
 
     def __post_init__(self):
-        if isinstance(self.timestamp, str) or isinstance(self.timestamp, int):
-            self.timestamp = parse_timestamp(self.timestamp)
+        if not isinstance(self.timestamp, datetime.datetime):
+            self.timestamp = parse_timestamp(str(self.timestamp))
 
         # move dataframe into Asset legs if not already there
         if len(self.legs) == 0:
