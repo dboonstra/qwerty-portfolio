@@ -43,8 +43,9 @@ class PortfolioManager:
         self.transactions_dict = defaultdict(list) # key by chain id
         self.transactions_log = TransactionLogger(self.transaction_log_file)
         if new_portfolio:
-            # save an empty portfolio
-            self._save_portfolio
+            # remove current portfolio for new
+            if os.path.exists(self.portfolio_file):
+                os.remove(self.portfolio_file)
         self._load_portfolio()
         self._setup_order_chainid()
 
@@ -62,11 +63,14 @@ class PortfolioManager:
     def _load_portfolio(self):
         """Loads portfolio data from the JSON file."""
         if os.path.exists(self.portfolio_file):
-            with open(self.portfolio_file, "r") as f:
-                data = json.load(f)
-                self.cash_balance = data.get("cash_balance", 0.0)
-                self.holdings: list[Asset] = [Asset(h) for h in data.get("holdings", [])]
-            self.order_chains = self._build_order_chains()
+            try:
+                with open(self.portfolio_file, "r") as f:
+                    data = json.load(f)
+                    self.cash_balance = data.get("cash_balance", 0.0)
+                    self.holdings: list[Asset] = [Asset(**h) for h in data.get("holdings", [])]
+                self.order_chains = self._build_order_chains()
+            except Exception as e:
+                warn(f"Error loading portfolio: {e}")
 
     def _build_order_chains(self) -> dict[str:list[Asset]]:
         """ create dict of holdings that is keyed by order chain id """
@@ -156,10 +160,6 @@ class PortfolioManager:
             leg = orig_leg.copy()
             symbol = leg.get_attr(Gl.SYMBOL)            
 
-            # cut
-            quantity = leg.get_attr(Gl.QUANTITY)
-            print(f"\nLEG in update_holding: {symbol} ({quantity}) \n" )
-
             # if this is in portfolio we add or subtract
             if symbol in hd:
                 _sync_ids(transaction, hd[symbol])
@@ -240,8 +240,8 @@ class PortfolioManager:
     def execute_roll(self, transaction : Transaction) -> bool:
         """
         Executes a transaction with multiple legs. Mix of Open and Close
-        # find the assets that are rolling 
-        # carry over the chainid for order_chain and +1 roll_count
+        * find the assets that are rolling 
+        * carry over the chainid for order_chain and +1 roll_count
         Args:
             transaction : A transaction object containing a list of transaction legs.
         """
@@ -317,7 +317,10 @@ class PortfolioManager:
         print(f"Cash Balance: ${self.cash_balance:.2f}")
         df = pd.DataFrame([h.serialize(for_json=True) for h in self.holdings], index=None)
         # borrow show_columns from the logger
-        print_tabulate(df=df, cols=self.transactions_log.show_columns)
+        if df.empty:
+            print("No holdings")
+        else:
+            print_tabulate(df=df, cols=self.transactions_log.show_columns)
 
     
     def print_transactions(self):
