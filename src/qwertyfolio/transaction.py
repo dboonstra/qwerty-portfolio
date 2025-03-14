@@ -46,6 +46,12 @@ class Transaction:
             if self.roll_count > 0: 
                 leg.set_attr(Gl.ROLL_COUNT, self.roll_count)
             leg.set_attr(Gl.TIME_STAMP, self.timestamp)
+        
+    def __repr__(self) -> str:
+        s = f"Transaction: {self.timestamp}\n"
+        for leg in self.legs:
+            s += f"{leg.serialize()}\n"
+        return s
 
     def calc_cost(self):
         # would be better to plug in a margin estimator 

@@ -100,6 +100,11 @@ class Asset:
 
         self.df = pd.DataFrame(fields, index=[0])
 
+    def __repr__(self):
+        return f"Asset({self.serialize(for_json=True)})"
+
+
+
     def get_attr(self, key: str):
         if key in self.df.columns:
             return self.df[key].iloc[0]
@@ -120,6 +125,7 @@ class Asset:
             for date_thing in [Gl.TIME_STAMP, Gl.EXPIRES_AT, Gl.QUOTE_DATE]:
                 if date_thing in h:
                     if h[date_thing] is not None:
-                        h[date_thing] = h[date_thing].isoformat()
+                        if hasattr(h[date_thing], 'isoformat'):
+                            h[date_thing] = h[date_thing].isoformat()
         return h
 
