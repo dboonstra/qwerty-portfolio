@@ -16,7 +16,7 @@ class Transaction:
     legs may be introduced as array of legs or DF of legs
 
     """
-    timestamp: Optional[str|datetime.datetime] = field(default_factory=datetime.datetime.now)
+    timestamp: Optional[int|str|datetime.datetime] = field(default_factory=datetime.datetime.now)
     legs: List[Asset] = field(default_factory=list)
     chainid : int = 1
     roll_count: int = 0
@@ -25,7 +25,7 @@ class Transaction:
     _next_chainid: ClassVar[int] = 1
 
     def __post_init__(self):
-        if isinstance(self.timestamp, str):
+        if isinstance(self.timestamp, str) or isinstance(self.timestamp, int):
             self.timestamp = parse_timestamp(self.timestamp)
 
         # move dataframe into Asset legs if not already there
