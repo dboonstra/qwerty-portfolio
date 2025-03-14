@@ -22,12 +22,17 @@ class PortfolioManager:
     cash management, PnL calculation, and transaction history.
     """
 
-    def __init__(self, portfolio_file="simulated_portfolio.json", transaction_log_file="transaction_log.csv"):
+    def __init__(self, 
+                 portfolio_file="simulated_portfolio.json", 
+                 transaction_log_file="transaction_log.csv",
+                 new_portfolio: bool = False):
         """
         Initializes the PortfolioManager.
 
         Args:
             portfolio_file (str): Path to the JSON file for portfolio data.
+            transaction_log_file (str): Path to the CSV file for transaction history.
+            new_portfolio (bool): If True, creates a new empty portfolio.
         """
         self.portfolio_file = portfolio_file
         self.transaction_log_file = transaction_log_file
@@ -37,7 +42,22 @@ class PortfolioManager:
         self.transactions: List[Asset] = []
         self.transactions_dict = defaultdict(list) # key by chain id
         self.transactions_log = TransactionLogger(self.transaction_log_file)
+        if new_portfolio:
+            # save an empty portfolio
+            self._save_portfolio
         self._load_portfolio()
+        self._setup_order_chainid()
+
+    def _setup_order_chainid(self):
+        """ Load transaction log to find the max chainid 
+        Then setup the next_chainid to match
+        """
+        df: pd.DataFrame= self.transactions_log.load_transactions_from_log()
+        if df is None or len(df) == 0:
+            return
+        df[Gl.CHAINID] = df[Gl.CHAINID].astype(int)
+        self.transactions._next_chainid = df[Gl.CHAINID].max() + 1
+
 
     def _load_portfolio(self):
         """Loads portfolio data from the JSON file."""
@@ -286,6 +306,11 @@ class PortfolioManager:
 
         return total_value  
     
+    def clear_log(self):
+        """Clears the transaction log."""
+        self.transactions_log.clear_log()
+
+
     def print_portfolio(self):
         """Prints the current portfolio holdings."""
         print("____ Current Portfolio ____")
