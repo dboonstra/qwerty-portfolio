@@ -7,6 +7,7 @@ from typing import Optional, List, ClassVar
 import pandas as pd  # type: ignore
 from collections import defaultdict
 from typing import Union
+from tabulate import tabulate
 
 
 DEBUG: bool = True
@@ -18,6 +19,16 @@ def debug(*a):
 def warn(*a):
     print(*a, file=sys.stderr)
     return None
+
+def print_tabulate(df: pd.DataFrame, cols: list[str] = [], title: str = None):
+    """ """
+    if title is not None: print(f"# {title}")
+    if len(cols) == 0:
+        print(tabulate(df, headers='keys', tablefmt='psql'))
+        pass
+    else:
+        print(tabulate(df[cols], headers='keys', tablefmt='psql'))
+    print()
 
 def flatten_model(var):
     # export pydantic model to json-izable thingy
