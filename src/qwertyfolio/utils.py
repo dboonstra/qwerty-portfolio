@@ -6,12 +6,6 @@ from typing import Union
 from tabulate import tabulate
 
 
-DEBUG: bool = True
-
-def debug(*a):
-    if DEBUG:
-        print(*a, file=sys.stderr)
-
 def warn(*a):
     print(*a, file=sys.stderr)
     return None
