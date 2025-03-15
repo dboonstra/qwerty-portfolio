@@ -25,7 +25,9 @@ class PortfolioManager:
     def __init__(self, 
                  portfolio_file="simulated_portfolio.json", 
                  transaction_log_file="transaction_log.csv",
-                 new_portfolio: bool = False):
+                 new_portfolio: bool = False,
+                 brokerage: object = None
+                 ):
         """
         Initializes the PortfolioManager.
 
@@ -42,6 +44,15 @@ class PortfolioManager:
         self.transactions: List[Asset] = []
         self.transactions_dict = defaultdict(list) # key by chain id
         self.transactions_log = TransactionLogger(self.transaction_log_file)
+        self.broker = None
+        if brokerage is not None:
+            # ensure is object with callable method execute_transaction()
+            if hasattr(brokerage, 'execute_transaction') and callable(getattr(brokerage, 'execute_transaction')):
+                self.broker = brokerage
+            else:
+                raise ValueError("Brokerage defined without callable method execute_transaction(legs, result_dict)")
+
+
         if new_portfolio:
             # remove current portfolio for new
             if os.path.exists(self.portfolio_file):
@@ -160,6 +171,7 @@ class PortfolioManager:
                 leg.set_attr(Gl.CHAINID, transaction.chainid)
                 leg.set_attr(Gl.ROLL_COUNT, transaction.roll_count)
 
+        new_holdings: list[Asset] = []
         for orig_leg in transaction.legs:
             # make a copy so that original is logged in transaction logs
             leg = orig_leg.copy()
@@ -183,13 +195,30 @@ class PortfolioManager:
                 leg.set_attr(Gl.QUANTITY, total_qty)
                 # set held asset for removal with Qty 0 
                 hd[symbol].set_attr(Gl.QUANTITY, 0)
-                self.holdings.append(leg)
+                new_holdings.append(leg)
             elif leg.get_attr(Gl.ORDER_TYPE) == Gl.BUY_TO_CLOSE or leg.get_attr(Gl.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
                 warn(f"Port Holding update found close for {symbol} with no assets")
                 return False
             else:
-                self.holdings.append(leg)
+                new_holdings.append(leg)
+        # all good here, extend the transaction to the brokerage obj
+        # the brokerage will return the market price for update
+        if self.broker is not None:
+            result_dict: dict[str:float] = {}
+            if self.broker.execute_transaction(transaction.legs, result_dict):
+                # will return True or False and update contents of result_dict
+                # update new_holdings and transaction leg prices
+                # TODO
+                for leg in transaction.legs:
+                    leg.set_attr(Gl.PRICE, result_dict[leg.get_attr(Gl.SYMBOL)])
+                for leg in new_holdings:
+                    leg.set_attr(Gl.PRICE, result_dict[leg.get_attr(Gl.SYMBOL)])
+            else:
+                warn("Broker denied transaction.")
+                return False
 
+    
+        self.holdings.extend(new_holdings)
         # remove 0 qty items
         self.holdings = [ h for h in self.holdings if h.get_attr(Gl.QUANTITY) != 0]
         # save as file
