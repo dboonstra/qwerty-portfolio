@@ -50,15 +50,20 @@ class PortfolioManager:
         self._setup_order_chainid()
 
     def _setup_order_chainid(self):
-        """ Load transaction log to find the max chainid 
+        """ Load transaction log to find the max chainid
         Then setup the next_chainid to match
         """
         df: pd.DataFrame= self.transactions_log.load_transactions_from_log()
-        if df is None or len(df) == 0:
+        if df is None or df.empty:
             return
-        df[Gl.CHAINID] = df[Gl.CHAINID].astype(int)
-        self.transactions._next_chainid = df[Gl.CHAINID].max() + 1
-
+        if Gl.CHAINID not in df.columns:
+            return
+        
+        # Safely handle the case where CHAINID column exists and find its max
+        chain_ids = df[Gl.CHAINID].dropna()  # Extract the column, drop NaNs
+        if not chain_ids.empty:
+            max_chainid = chain_ids.astype(int).max()
+            Transaction._next_chainid = max_chainid + 1
 
     def _load_portfolio(self):
         """Loads portfolio data from the JSON file."""
