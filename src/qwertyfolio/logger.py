@@ -45,7 +45,6 @@ class TransactionLogger:
         """Appends a transaction to the CSV log file."""
         tx = pd.DataFrame([h.serialize() for h in transaction.legs])
         tx = tx.reindex(columns=self.log_columns)
-        print("Logging transaction: ", len(tx))
         tx.to_csv(self.transaction_log_file, mode='a', header=False, index=False)
 
     def print_transactions(self, bychain: bool = False):
