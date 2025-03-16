@@ -1,7 +1,7 @@
 
 
 class Gl:
-    
+
     """Class of term strings"""
     # order actions
     BUY_TO_OPEN = "Buy to Open"
@@ -37,3 +37,6 @@ class Gl:
     ORDER_TYPE = 'order_type'
     CHAINID = 'chainid'
     ROLL_COUNT = 'roll_count'
+
+    # brokerage obj to set this dict key to error message
+    ERROR = 'error'

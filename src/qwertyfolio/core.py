@@ -1,18 +1,16 @@
 import json
 import os
-from dataclasses import dataclass, field
-from typing import Optional, List, ClassVar
 import pandas as pd # type: ignore
+import datetime
 from collections import defaultdict
+from typing import Optional, List, ClassVar
 
 from .transaction import Transaction
 from .logger import TransactionLogger
 from .globals import Gl
 from .assets import Asset
-from .utils import (
-    print_tabulate,
-    warn
-)
+from .utils import print_tabulate, warn
+
 
 
 
@@ -26,7 +24,9 @@ class PortfolioManager:
                  portfolio_file="simulated_portfolio.json", 
                  transaction_log_file="transaction_log.csv",
                  new_portfolio: bool = False,
-                 brokerage: object = None
+                 brokerage: object = None,
+                 use_brokerage_holdings: bool = False,
+                 use_brokerage_transactions: bool = False,
                  ):
         """
         Initializes the PortfolioManager.
@@ -44,20 +44,36 @@ class PortfolioManager:
         self.transactions: List[Asset] = []
         self.transactions_dict = defaultdict(list) # key by chain id
         self.transactions_log = TransactionLogger(self.transaction_log_file)
+
         self.broker = None
-        if brokerage is not None:
-            # ensure is object with callable method execute_transaction()
-            if hasattr(brokerage, 'execute_transaction') and callable(getattr(brokerage, 'execute_transaction')):
-                self.broker = brokerage
-            else:
-                raise ValueError("Brokerage defined without callable method execute_transaction(legs, result_dict)")
+        self.use_bokerage_holdings = use_brokerage_holdings
+        self.use_bokerage_transactions = use_brokerage_transactions
+        if brokerage is None:
+            self.use_bokerage_holdings = False
+            self.use_bokerage_transactions = False
+        else:
+            self.broker = brokerage
+            if use_brokerage_holdings:
+                if hasattr(brokerage, 'get_holdings') and callable(getattr(brokerage, 'get_holdings')):
+                    self.holdings = brokerage.get_positions()
+                    # reset portfolio
+                    new_portfolio = True
+                else:
+                    raise ValueError("Brokerage defined without callable method get_holdings()")
+            if use_brokerage_transactions:
+                if hasattr(brokerage, 'execute_transaction') and callable(getattr(brokerage, 'execute_transaction')):
+                    pass
+                else:
+                    raise ValueError("Brokerage defined without callable method execute_transaction(legs, result_dict)")
 
 
         if new_portfolio:
             # remove current portfolio for new
             if os.path.exists(self.portfolio_file):
                 os.remove(self.portfolio_file)
-        self._load_portfolio()
+            self._save_portfolio()
+        else:
+            self._load_portfolio()
         self._setup_order_chainid()
 
     def _setup_order_chainid(self):
@@ -201,20 +217,27 @@ class PortfolioManager:
                 return False
             else:
                 new_holdings.append(leg)
-        # all good here, extend the transaction to the brokerage obj
+
+        # all good here, now extend the transaction to the brokerage obj
         # the brokerage will return the market price for update
-        if self.broker is not None:
-            result_dict: dict[str:float] = {}
-            if self.broker.execute_transaction(transaction.legs, result_dict):
+        if self.broker is None:
+            pass
+        elif self.use_bokerage_transactions:
+            result_dict: dict[str:dict[str:any]] = transaction.serialize()
+            if self.broker.execute_transaction(result_dict):
                 # will return True or False and update contents of result_dict
                 # update new_holdings and transaction leg prices
-                # TODO
-                for leg in transaction.legs:
-                    leg.set_attr(Gl.PRICE, result_dict[leg.get_attr(Gl.SYMBOL)])
-                for leg in new_holdings:
-                    leg.set_attr(Gl.PRICE, result_dict[leg.get_attr(Gl.SYMBOL)])
+                ttime = datetime.datetime.now
+                for leg_ary in [transaction.legs, new_holdings]:
+                    for leg in leg_ary:
+                        symbol = leg.get_attr(Gl.SYMBOL)
+                        if symbol in result_dict:
+                            if Gl.PRICE in result_dict[symbol]:
+                                leg.set_attr(Gl.PRICE, result_dict[symbol][Gl.PRICE])
+                            leg.set_attr(Gl.TIME_STAMP, ttime)
             else:
-                warn("Broker denied transaction.")
+                e = result_dict[Gl.ERROR] if Gl.ERROR in result_dict else "ERROR_UNKKNOWN"
+                warn(f"Broker denied transaction: {e}")
                 return False
 
     
