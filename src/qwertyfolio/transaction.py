@@ -52,6 +52,7 @@ class Transaction:
         for leg in self.legs:
             s += f"{leg.serialize()}\n"
         return s
+    
 
     def calc_cost(self):
         # would be better to plug in a margin estimator 
@@ -63,9 +64,17 @@ class Transaction:
             cost += leg.get_attr(Gl.QUANTITY) * leg.get_attr(Gl.PRICE) * leg.get_attr(Gl.MULTIPLIER)
         return cost
 
-    def serialize(self) -> dict:
-        """Serializes a Transaction object to a dictionary."""
-        pass
+    def serialize(self) -> dict[str, dict[str, any]]:
+        """Serializes a Transaction object to a dictionary.
+        Returns:
+            dict: A dictionary representation of the Transaction object.
+        """
+        ret: dict = {}
+        for leg in self.legs:
+            symbol = leg.get_attr(Gl.SYMBOL)
+            ret[symbol] = leg.serialize()
+        return ret
+
 
     def next_chainid(self) -> int:
         Transaction._next_chainid += 1
