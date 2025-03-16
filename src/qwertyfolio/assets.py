@@ -120,7 +120,7 @@ class Asset:
 
     def serialize(self, for_json: bool = False) -> dict:
         """Serializes a Holding object to a dictionary."""
-        h = self.df.to_dict(orient='records')[0]
+        h = self.df.copy().to_dict(orient='records')[0]
         if for_json: # convert datetime to iso string
             for date_thing in [Gl.TIME_STAMP, Gl.EXPIRES_AT, Gl.QUOTE_DATE]:
                 if date_thing in h:
