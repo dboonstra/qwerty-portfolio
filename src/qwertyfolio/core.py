@@ -55,7 +55,7 @@ class PortfolioManager:
             self.broker = brokerage
             if use_brokerage_holdings:
                 if hasattr(brokerage, 'get_holdings') and callable(getattr(brokerage, 'get_holdings')):
-                    self.holdings = brokerage.get_positions()
+                    self.holdings = brokerage.get_holdings()
                     # reset portfolio
                     new_portfolio = True
                 else:
@@ -227,7 +227,7 @@ class PortfolioManager:
             if self.broker.execute_transaction(result_dict):
                 # will return True or False and update contents of result_dict
                 # update new_holdings and transaction leg prices
-                ttime = datetime.datetime.now
+                ttime = datetime.datetime.now()
                 for leg_ary in [transaction.legs, new_holdings]:
                     for leg in leg_ary:
                         symbol = leg.get_attr(Gl.SYMBOL)
@@ -336,19 +336,24 @@ class PortfolioManager:
         return self.execute_transaction(transaction)
 
 
-    def calculate_pnl(self, current_prices):
-        """Calculates the Profit and Loss (PnL) of the portfolio."""
+    def calculate_pnl(self, current_prices: dict[str:float]) -> float:
+        """Calculates the Profit and Loss (PnL) of the portfolio.
+        Args:
+            current_prices (dict): A dictionary mapping symbols to their current prices.
+        Returns:
+            float: The calculated PnL.
+        """
         pnl = 0.0
         for holding in self.holdings:
             symbol = holding.get_attr(Gl.SYMBOL)
-            if symbol in current_prices:
+            if symbol in current_prices.keys():
                 qty = holding.get_attr(Gl.QUANTITY)
                 current_value = qty * current_prices[symbol]
                 initial_value = qty * holding.get_attr(Gl.AVERAGE_OPEN_PRICE)
                 pnl += current_value - initial_value
             else: 
                 print(f"Warning: No current price found for {symbol}.")
-        return pnl
+        return float(pnl)
 
     def get_portfolio_value(self, current_prices: dict) -> float:
         """Calculates the total value of the portfolio, including cash."""
