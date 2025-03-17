@@ -40,7 +40,7 @@ class MyBroker:
         self.brokerapi = OurBrokerAPI()
 
 
-    def get_positions(self) -> list[Asset]:
+    def get_holdings(self) -> list[Asset]:
         """
         HOOK: called by qwertyfolio.core.init()
         This initiates holdings from the broker
@@ -83,7 +83,7 @@ class MyBroker:
             net_price += trans_dict[symbol][Gl.PRICE] * trans_dict[symbol][Gl.QUANTITY]
             record = { 
                 'symbol':symbol,
-                'order_type': trans_dict[Gl.ORDER_TYPE],
+                'order_type': trans_dict[symbol][Gl.ORDER_TYPE],
                 'price': trans_dict[symbol][Gl.PRICE],
                 'quantity': trans_dict[symbol][Gl.QUANTITY] 
             }
