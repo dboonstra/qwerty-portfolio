@@ -39,7 +39,8 @@ class Transaction:
             self.legs = [Asset(**asset) for asset in assets]
 
         if self.legs[0].get_attr(Gl.SYMBOL) != Gl.CASH_SYMBOL:
-            self.chainid = self.next_chainid()
+            if self.chainid == 1:
+                self.chainid = self.next_chainid()
 
         for leg in self.legs:
             leg.set_attr(Gl.CHAINID, self.chainid)
