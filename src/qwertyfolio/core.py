@@ -5,6 +5,9 @@ import datetime
 from collections import defaultdict
 from typing import Optional, List, ClassVar
 
+
+from .exceptions import InsufficientFundsError, InvalidSymbolError, BrokerError
+
 from .transaction import Transaction
 from .logger import TransactionLogger
 from .globals import Gl
@@ -45,14 +48,14 @@ class PortfolioManager:
         self.transactions_dict = defaultdict(list) # key by chain id
         self.transactions_log = TransactionLogger(self.transaction_log_file)
 
-        self.broker = None
-        self.use_bokerage_holdings = use_brokerage_holdings
-        self.use_bokerage_transactions = use_brokerage_transactions
         if brokerage is None:
+            self.broker = None
             self.use_bokerage_holdings = False
             self.use_bokerage_transactions = False
         else:
             self.broker = brokerage
+            self.use_bokerage_holdings = use_brokerage_holdings
+            self.use_bokerage_transactions = use_brokerage_transactions
             if use_brokerage_holdings:
                 if hasattr(brokerage, 'get_holdings') and callable(getattr(brokerage, 'get_holdings')):
                     self.holdings = brokerage.get_holdings()
@@ -175,8 +178,6 @@ class PortfolioManager:
  
 
     def _update_holding(self,transaction: Transaction) -> bool:
-        hd = self.holding_by_dict()
-        # merge legs to holdings
 
             
         def _sync_ids(transaction, hold_asset):
@@ -187,6 +188,44 @@ class PortfolioManager:
                 leg.set_attr(Gl.CHAINID, transaction.chainid)
                 leg.set_attr(Gl.ROLL_COUNT, transaction.roll_count)
 
+        hd = self.holding_by_dict()
+
+        # ensure close order types have matching holdings
+        for leg in transaction.legs:
+            if leg.get_attr(Gl.ORDER_TYPE) == Gl.BUY_TO_CLOSE or leg.get_attr(Gl.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
+                symbol = leg.get_attr(Gl.SYMBOL)
+                if symbol not in hd:
+                    warn(f"Port Holding update found close for {symbol} with no assets")
+                    return False
+                if leg.get_attr(Gl.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
+                    if leg.get_attr(Gl.QUANTITY) + hd[symbol].get_attr(Gl.QUANTITY) < 0:
+                        warn(f"Sell to close {symbol} quantity not in holdings")
+                        return False
+                elif leg.get_attr(Gl.QUANTITY) + hd[symbol].get_attr(Gl.QUANTITY) > 0:
+                    warn(f"Buy to close {symbol} quantity not in holdings")
+                    return False
+
+        
+
+
+        # all good here, now extend the transaction to the brokerage obj
+        # the brokerage will return the market price for update
+        if self.broker is None:
+            pass
+        elif self.use_bokerage_transactions:
+            try:
+                # new_legs may have updated prices or quantities
+                new_legs = self.broker.execute_transaction(transaction.legs)
+                transaction.legs = new_legs
+            except BrokerError as e:
+                warn(f"Brokerage Error: {e}")
+                return False    
+            # update transaction timestamps
+            ttime = datetime.datetime.now()
+            for leg_ary in transaction.legs:
+                leg.set_attr(Gl.TIME_STAMP, ttime)
+
+        # merge legs to holdings
         new_holdings: list[Asset] = []
         for orig_leg in transaction.legs:
             # make a copy so that original is logged in transaction logs
@@ -212,33 +251,9 @@ class PortfolioManager:
                 # set held asset for removal with Qty 0 
                 hd[symbol].set_attr(Gl.QUANTITY, 0)
                 new_holdings.append(leg)
-            elif leg.get_attr(Gl.ORDER_TYPE) == Gl.BUY_TO_CLOSE or leg.get_attr(Gl.ORDER_TYPE) == Gl.SELL_TO_CLOSE:
-                warn(f"Port Holding update found close for {symbol} with no assets")
-                return False
             else:
                 new_holdings.append(leg)
 
-        # all good here, now extend the transaction to the brokerage obj
-        # the brokerage will return the market price for update
-        if self.broker is None:
-            pass
-        elif self.use_bokerage_transactions:
-            result_dict: dict[str:dict[str:any]] = transaction.serialize()
-            if self.broker.execute_transaction(result_dict):
-                # will return True or False and update contents of result_dict
-                # update new_holdings and transaction leg prices
-                ttime = datetime.datetime.now()
-                for leg_ary in [transaction.legs, new_holdings]:
-                    for leg in leg_ary:
-                        symbol = leg.get_attr(Gl.SYMBOL)
-                        if symbol in result_dict:
-                            if Gl.PRICE in result_dict[symbol]:
-                                leg.set_attr(Gl.PRICE, result_dict[symbol][Gl.PRICE])
-                            leg.set_attr(Gl.TIME_STAMP, ttime)
-            else:
-                e = result_dict[Gl.ERROR] if Gl.ERROR in result_dict else "ERROR_UNKKNOWN"
-                warn(f"Broker denied transaction: {e}")
-                return False
 
     
         self.holdings.extend(new_holdings)
