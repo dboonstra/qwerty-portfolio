@@ -2,8 +2,21 @@ import datetime
 import pandas as pd # type: ignore
 from typing import Optional, List, ClassVar
 
+from .exceptions import InvalidSymbolError
 from .globals import Gl
 from .utils import option_type, option_expires_at, option_underyling, option_strike, parse_timestamp
+
+def option_symbol_format_valid(self, symbol: str) -> bool:
+    """ensure option symbol fits standard format"""
+    # SPY---250131C00635000
+    if len(symbol) != 21:
+        return False
+    dt = o[6:12]
+    pt = o[12:13]
+    at = o[13:21]
+    if at.isnumeric() and dt.isnumeric() and pt in ['C', 'P']:
+        return True 
+    return False
 
 
 class Asset:
@@ -42,6 +55,8 @@ class Asset:
     # Asset representation will be a dataframe
     df: Optional[pd.DataFrame] = None
 
+
+
     def __init__(self, **fields):        
         for field_name in Asset.EXPECTED_COLUMNS:
             if field_name not in fields:
@@ -63,6 +78,9 @@ class Asset:
         # Initializes derived attributes based on the symbol.
         symbol = fields[Gl.SYMBOL]
         isoption = len(symbol) > 12
+
+        if isoption and not option_symbol_format_valid(symbol):
+          raise InvalidSymbolError("Invalid option symbol format")
 
         # setup defaults
         def default(key,val):
