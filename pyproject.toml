@@ -7,5 +7,6 @@ requires-python = ">=3.11"
 dependencies = [
     "dataclasses>=0.8",
     "pandas>=2.2.3",
+    "tabulate>=0.9.0",
     "typing>=3.10.0.0",
 ]
