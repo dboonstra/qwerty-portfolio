@@ -5,7 +5,7 @@ from .transaction import Transaction
 from .logger import TransactionLogger
 from .globals import Gl
 from .assets import Asset
-from brokerage import Brokerage
+from .brokerage import BrokerAPI
 from .utils import (
     option_expires_at, 
     option_strike, 
@@ -30,4 +30,5 @@ __all__ = [
     'parse_timestamp',
     'print_tabulate',
     'get_quotes',
+    'BrokerAPI',
     ]
