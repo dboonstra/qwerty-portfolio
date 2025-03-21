@@ -5,6 +5,7 @@ This is a stub module for a brokerage integration
 from .globals import Gl
 from .assets import Asset
 from .exceptions import BrokerError
+from .utils import get_quotes
 
 from abc import ABC, abstractmethod
 
@@ -19,7 +20,7 @@ class BrokerAPI(ABC):
         pass
 
 
-class OurBroker(BrokerAPI):
+class OurBroker(BrokerAPI):    
     """
     empty shell of a brokerage integration
     """
@@ -27,8 +28,9 @@ class OurBroker(BrokerAPI):
     def __init__(self):
         pass
 
-    def get_quotes(self, symbols):
-        return {}
+    def get_quotes(self, symbols) -> dict[str:float]:
+        # return quotes from yfinance
+        return get_quotes(symbols)
 
     def get_holdings(self) -> list[Asset]:
         """

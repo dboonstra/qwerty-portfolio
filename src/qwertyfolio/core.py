@@ -12,7 +12,7 @@ from .transaction import Transaction
 from .logger import TransactionLogger
 from .globals import Gl
 from .assets import Asset
-from .utils import print_tabulate, warn
+from .utils import print_tabulate, warn, get_quotes
 
 
 
@@ -350,8 +350,26 @@ class PortfolioManager:
 
         return self.execute_transaction(transaction)
 
+    def _current_prices_filna(self, current_prices: dict[str:float] = None) -> dict[str:float]:
+        # try to fill in current prices where missing 
+        if current_prices is None:
+            current_prices = {}
+        holding_by_dict = self.holding_by_dict()
+        symbols = list(holding_by_dict.keys())
+        find_symbols: list = []
+        for symbol in symbols:
+            if symbol not in current_prices:
+                find_symbols.append(symbol)
+        if len(find_symbols) > 0:
+            if self.broker is not None:
+                current_prices.update(self.broker.get_quotes(find_symbols))
+            else: 
+                current_prices.update(get_quotes(find_symbols))
+        return current_prices
+                
 
-    def calculate_pnl(self, current_prices: dict[str:float]) -> float:
+
+    def calculate_pnl(self, current_prices: dict[str:float] = None) -> float:
         """Calculates the Profit and Loss (PnL) of the portfolio.
         Args:
             current_prices (dict): A dictionary mapping symbols to their current prices.
@@ -359,8 +377,9 @@ class PortfolioManager:
             float: The calculated PnL.
         """
         pnl = 0.0
-        for holding in self.holdings:
-            symbol = holding.get_attr(Gl.SYMBOL)
+        current_prices = self._current_prices_filna(current_prices)
+        holding_by_dict = self.holding_by_dict()            
+        for symbol, holding in holding_by_dict.items():
             if symbol in current_prices.keys():
                 qty = holding.get_attr(Gl.QUANTITY)
                 current_value = qty * current_prices[symbol]
@@ -373,14 +392,14 @@ class PortfolioManager:
     def get_portfolio_value(self, current_prices: dict) -> float:
         """Calculates the total value of the portfolio, including cash."""
         total_value = self.cash_balance
-        for holding in self.holdings:
-            symbol = holding.get_attr(Gl.SYMBOL)
+        current_prices = self._current_prices_filna(current_prices)
+        holding_by_dict = self.holding_by_dict()            
+        for symbol, holding in holding_by_dict.items():
             if symbol in current_prices:
                 qty = holding.get_attr(Gl.QUANTITY)
                 total_value += qty * current_prices[symbol]
             else: 
                 print(f"Warning: No current price found for {holding.symbol}.")
-
         return total_value  
     
     def clear_log(self):

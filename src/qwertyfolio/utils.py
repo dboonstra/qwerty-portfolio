@@ -24,8 +24,19 @@ def print_tabulate(df: pd.DataFrame, cols: list[str] = [], title: str = None):
 
 
 def get_quotes(symbols: list[str]) -> dict[str:float]:
+    """
+    Args:
+        symbols (list): list of symbols
+    Returns:
+        dict: {symbol: price}
+    """
     ret: dict = {}
     for sym in symbols:
+        if len(sym) > 12:
+            # yfinance likes option symbols trimmed
+            # e.g. 'SPY   250331C00375000' == 'SPY250331C00375000'
+            sym = sym.replace(' ', '')
+            sym = sym.replace('-', '')
         tick = yf.Ticker(sym)
         try:
             ret[sym] = tick.info['currentPrice']
