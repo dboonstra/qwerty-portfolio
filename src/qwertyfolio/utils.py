@@ -68,6 +68,18 @@ def option_expires_at(symbol: str) -> Optional[datetime.datetime]:
         warn(f"Invalid date format in symbol: {symbol}")
         return None
 
+def option_symbol_format_valid(symbol: str) -> bool:
+    """ensure option symbol fits standard format"""
+    # SPY---250131C00635000
+    if len(symbol) != 21:
+        return False
+    dt = symbol[6:12]
+    pt = symbol[12:13]
+    at = symbol[13:21]
+    if at.isnumeric() and dt.isnumeric() and pt in ['C', 'P']:
+        return True 
+    return False
+
 
 def parse_timestamp(timestamp_input: Union[int, str, datetime.date, datetime.datetime]) -> datetime.datetime:
     """

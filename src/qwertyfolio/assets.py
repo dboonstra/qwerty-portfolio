@@ -4,19 +4,15 @@ from typing import Optional, List, ClassVar
 
 from .exceptions import InvalidSymbolError
 from .globals import Gl
-from .utils import option_type, option_expires_at, option_underyling, option_strike, parse_timestamp
+from .utils import (
+    option_type, 
+    option_expires_at, 
+    option_underyling, 
+    option_strike, 
+    parse_timestamp, 
+    option_symbol_format_valid
+)
 
-def option_symbol_format_valid(self, symbol: str) -> bool:
-    """ensure option symbol fits standard format"""
-    # SPY---250131C00635000
-    if len(symbol) != 21:
-        return False
-    dt = o[6:12]
-    pt = o[12:13]
-    at = o[13:21]
-    if at.isnumeric() and dt.isnumeric() and pt in ['C', 'P']:
-        return True 
-    return False
 
 
 class Asset:
