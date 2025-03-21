@@ -1,6 +1,6 @@
 # qwertyfolio: A Simulated Portfolio Management Tool
 
-`qwertyfolio` is a Python module designed for simulating and managing a stock and options portfolio. It provides a framework for tracking holdings, executing transactions, calculating profit and loss (PnL), and maintaining a detailed transaction history. `qwertyfolio` can be used for educational purposes, algorithmic trading development, or testing investment strategies without real-world financial risk.
+`qwertyfolio` is a Python module designed for simulating and managing a stock and options portfolio. It provides a framework for tracking holdings, executing transactions, calculating profit and loss (PnL), and maintaining a detailed transaction history. `qwertyfolio` can be used for educational purposes, algorithmic trading development, or testing investment strategies without real-world financial risk.  Brokerage integration is provided to smooth transition from back-testing, to forward-testing, to live transactions.
 
 ## Features
 
@@ -59,8 +59,13 @@ from qwertyfolio.brokerage import MyBroker
 
 # Initialize the portfolio manager with a new portfolio
 # use a broker API
-broker = MyBroker()
-pm = PortfolioManager(new_portfolio=True, brokerage=broker, use_brokerage_holdings=False, use_brokerage_transactions=True)
+port_file = 'portfolio.json'
+transaction_file = 'transaction_log.csv' 
+pm = PortfolioManager(port_file, transaction_file, new_portfolio=True)
+# ... or with broker integration
+mybroker = ourBroker()
+pm = PortfolioManager(port_file, transaction_file, new_portfolio=True, 
+    brokerage=broker, use_brokerage_holdings=False, use_brokerage_transactions=True)
 
 # Add cash to the portfolio
 pm.update_cash_balance(10000)
