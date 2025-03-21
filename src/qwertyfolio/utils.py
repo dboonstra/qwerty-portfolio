@@ -1,5 +1,6 @@
 import sys
 import datetime
+import yfinance as yf
 from typing import Optional
 import pandas as pd  # type: ignore
 from typing import Union
@@ -20,6 +21,22 @@ def print_tabulate(df: pd.DataFrame, cols: list[str] = [], title: str = None):
     else:
         print(tabulate(df[cols], headers='keys', tablefmt='psql'))
     print()
+
+
+def get_quotes(symbols: list[str]) -> dict[str:float]:
+    ret: dict = {}
+    for sym in symbols:
+        tick = yf.Ticker(sym)
+        try:
+            ret[sym] = tick.info['currentPrice']
+        except:
+            try:
+                b,a = tick.info['bid'], tick.info['ask']
+                ret[sym] = (b+a)/2
+            except:
+                warn(f"get_quotes: fetch failed {sym}")
+                continue
+    return ret
 
 def option_strike(symbol: str) -> float:
     """
