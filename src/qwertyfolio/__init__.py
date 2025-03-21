@@ -5,6 +5,7 @@ from .transaction import Transaction
 from .logger import TransactionLogger
 from .globals import Gl
 from .assets import Asset
+from brokerage import Brokerage
 from .utils import (
     option_expires_at, 
     option_strike, 
@@ -12,6 +13,7 @@ from .utils import (
     option_underyling,
     parse_timestamp,
     print_tabulate,
+    get_quotes,
     )
 
 
@@ -26,5 +28,6 @@ __all__ = [
     'option_type',
     'option_underyling',
     'parse_timestamp',
-    'print_tabulate'
+    'print_tabulate',
+    'get_quotes',
     ]
