@@ -47,6 +47,8 @@ class PortfolioManager:
         self.transactions: List[Asset] = []
         self.transactions_dict = defaultdict(list) # key by chain id
         self.transactions_log = TransactionLogger(self.transaction_log_file)
+        self.current_prices: dict[str:float] = {}
+        
 
         if brokerage is None:
             self.broker = None
@@ -350,10 +352,16 @@ class PortfolioManager:
 
         return self.execute_transaction(transaction)
 
-    def _current_prices_filna(self, current_prices: dict[str:float] = None) -> dict[str:float]:
+    def update_current_prices(self, current_prices: dict[str:float] = None, refresh: bool = False) -> dict[str:float]:
         # try to fill in current prices where missing 
+        if refresh:
+            self.current_prices = {}  
         if current_prices is None:
-            current_prices = {}
+            current_prices = self.current_prices
+        else:
+            self.current_prices.update(current_prices)
+            current_prices = self.current_prices
+
         holding_by_dict = self.holding_by_dict()
         symbols = list(holding_by_dict.keys())
         find_symbols: list = []
@@ -365,6 +373,7 @@ class PortfolioManager:
                 current_prices.update(self.broker.get_quotes(find_symbols))
             else: 
                 current_prices.update(get_quotes(find_symbols))
+        self.current_prices = current_prices
         return current_prices
                 
 
@@ -377,7 +386,7 @@ class PortfolioManager:
             float: The calculated PnL.
         """
         pnl = 0.0
-        current_prices = self._current_prices_filna(current_prices)
+        current_prices = self.update_current_prices(current_prices)
         holding_by_dict = self.holding_by_dict()            
         for symbol, holding in holding_by_dict.items():
             if symbol in current_prices.keys():
@@ -392,7 +401,7 @@ class PortfolioManager:
     def get_portfolio_value(self, current_prices: dict) -> float:
         """Calculates the total value of the portfolio, including cash."""
         total_value = self.cash_balance
-        current_prices = self._current_prices_filna(current_prices)
+        current_prices = self.update_current_prices(current_prices)
         holding_by_dict = self.holding_by_dict()            
         for symbol, holding in holding_by_dict.items():
             if symbol in current_prices:
